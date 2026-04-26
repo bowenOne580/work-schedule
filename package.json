@@ -1,0 +1,19 @@
+{
+  "name": "work-schedule",
+  "version": "1.0.0",
+  "description": "Lightweight learning task planner with JSON storage",
+  "main": "server.js",
+  "scripts": {
+    "auth:init": "node scripts/initAuth.js",
+    "start": "node server.js"
+  },
+  "keywords": [
+    "planner",
+    "task",
+    "learning"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

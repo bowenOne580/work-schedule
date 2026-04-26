@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>学习任务规划 - 异常</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-page="anomalies">
+    <div class="container">
+      <header class="topbar">
+        <div class="brand">学习任务规划台</div>
+        <nav class="nav-links">
+          <a data-nav="dashboard" href="/index.html">总览</a>
+          <a data-nav="tasks" href="/tasks.html">任务</a>
+          <a data-nav="statistics" href="/statistics.html">统计</a>
+          <a data-nav="anomalies" href="/anomalies.html">异常</a>
+        </nav>
+        <div class="top-actions">
+          <button id="logout-btn" type="button">退出登录</button>
+          <button id="stop-server-btn" class="danger" type="button">停止软件</button>
+        </div>
+      </header>
+
+      <section class="hero-card">
+        <h1>异常任务</h1>
+        <p>集中查看延期、跳过检查点等异常标记任务。</p>
+      </section>
+
+      <main class="grid one-col">
+        <section class="panel">
+          <h2>异常列表</h2>
+          <div id="anomaly-list" class="list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/js/common.js" defer></script>
+    <script src="/js/anomalies.js" defer></script>
+  </body>
+</html>

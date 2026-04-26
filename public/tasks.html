@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>学习任务规划 - 任务</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-page="tasks">
+    <div class="container">
+      <header class="topbar">
+        <div class="brand">学习任务规划台</div>
+        <nav class="nav-links">
+          <a data-nav="dashboard" href="/index.html">总览</a>
+          <a data-nav="tasks" href="/tasks.html">任务</a>
+          <a data-nav="statistics" href="/statistics.html">统计</a>
+          <a data-nav="anomalies" href="/anomalies.html">异常</a>
+        </nav>
+        <div class="top-actions">
+          <button id="logout-btn" type="button">退出登录</button>
+          <button id="stop-server-btn" class="danger" type="button">停止软件</button>
+        </div>
+      </header>
+
+      <section class="hero-card hero-tools">
+        <div>
+          <h1>任务管理</h1>
+          <p>按分类浏览任务，进入任务后集中管理状态、耗时和检查点。</p>
+        </div>
+        <div class="actions no-margin">
+          <button id="open-category-modal" type="button">新建分类</button>
+          <button id="open-task-modal" type="button">新建任务</button>
+        </div>
+      </section>
+
+      <main class="explorer-layout">
+        <section class="panel explorer-sidebar">
+          <h2>分类树</h2>
+          <div id="category-tree" class="tree-list"></div>
+        </section>
+
+        <section class="panel explorer-main">
+          <div id="explorer-view" class="list">请选择一个分类查看任务</div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="task-modal" class="modal">
+      <form method="dialog" class="modal-inner" id="task-form">
+        <h3>新建任务</h3>
+
+        <label>
+          <span class="field-label">任务名称</span>
+          <input name="title" required placeholder="例如：复习离散数学" />
+          <small>必填，建议动词开头，便于执行。</small>
+        </label>
+
+        <label>
+          <span class="field-label">所属分类</span>
+          <select name="categoryId" id="task-category" required></select>
+          <small>任务归属的学习领域。</small>
+        </label>
+
+        <label>
+          <span class="field-label">标签</span>
+          <input name="tags" placeholder="例如：数学, 证明, 期中" />
+          <small>可选，多个标签用英文逗号分隔。</small>
+        </label>
+
+        <label>
+          <span class="field-label">手动优先级（1-5）</span>
+          <input name="manualPriority" type="number" min="1" max="5" value="3" />
+          <small>5 最高，推荐算法会优先考虑。</small>
+        </label>
+
+        <label>
+          <span class="field-label">预计耗时（分钟）</span>
+          <input name="estimatedMinutes" type="number" min="0" placeholder="例如：90" />
+          <small>可选，用于推荐与计划。</small>
+        </label>
+
+        <label>
+          <span class="field-label">当前已投入（分钟）</span>
+          <input name="actualMinutes" type="number" min="0" value="0" />
+          <small>可选，填写已发生的任务级耗时。</small>
+        </label>
+
+        <label>
+          <span class="field-label">截止日期</span>
+          <input name="deadline" type="date" />
+          <small>只需选择日期，不需要具体时间。</small>
+        </label>
+
+        <div class="modal-actions">
+          <button value="cancel" type="button" id="cancel-task-modal">取消</button>
+          <button value="default" type="submit">创建任务</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="category-modal" class="modal">
+      <form method="dialog" class="modal-inner" id="category-form">
+        <h3>新建分类</h3>
+
+        <label>
+          分类名称
+          <input name="name" required placeholder="例如：算法" />
+          <small>必填，建议使用简洁领域名。</small>
+        </label>
+
+        <label>
+          分类描述
+          <input name="description" placeholder="例如：算法题训练与复盘" />
+          <small>可选，帮助你回忆分类用途。</small>
+        </label>
+
+        <div class="modal-actions">
+          <button value="cancel" type="button" id="cancel-category-modal">取消</button>
+          <button value="default" type="submit">创建分类</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/js/common.js" defer></script>
+    <script src="/js/tasks.js" defer></script>
+  </body>
+</html>

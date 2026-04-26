@@ -1,0 +1,6 @@
+node_modules/
+data/
+config/auth.json
+*.log
+.codex
+work-schedule-migrate.tar.gz

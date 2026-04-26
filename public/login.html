@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>登录 - 学习任务规划</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-page="login">
+    <main class="login-shell">
+      <section class="login-panel">
+        <div>
+          <p class="login-eyebrow">Work Schedule</p>
+          <h1>登录</h1>
+          <p class="muted">请输入访问凭据以进入学习任务规划台。</p>
+        </div>
+
+        <form id="login-form" class="login-form">
+          <label>
+            用户名
+            <input name="username" autocomplete="username" required />
+          </label>
+
+          <label>
+            密码
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+
+          <label class="checkbox-row">
+            <input name="remember" type="checkbox" />
+            <span>自动登录</span>
+          </label>
+
+          <button type="submit">进入</button>
+          <p id="login-message" class="form-message" role="alert"></p>
+        </form>
+      </section>
+    </main>
+
+    <script src="/js/login.js" defer></script>
+  </body>
+</html>
