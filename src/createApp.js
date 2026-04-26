@@ -33,6 +33,24 @@ function parseCookies(header) {
   }, {});
 }
 
+function parseOriginList(value) {
+  const source = Array.isArray(value) ? value : String(value || "").split(",");
+  return source.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function mergeVary(current, key) {
+  const values = String(current || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (!values.includes(key)) {
+    values.push(key);
+  }
+
+  return values.join(", ");
+}
+
 function isPageRequest(req) {
   if (req.method !== "GET" || req.path.startsWith("/api/")) {
     return false;
@@ -57,11 +75,33 @@ function asyncRoute(handler) {
   };
 }
 
-function createApp(service) {
+function createApp(service, options = {}) {
   const app = express();
   const authConfig = getAuthConfig();
+  const serveStatic = Boolean(options.serveStatic);
+  const allowedOrigins = new Set(parseOriginList(options.corsOrigins));
+  const hasCorsPolicy = allowedOrigins.size > 0;
+  const cookieSameSite = authConfig.cookieSameSite;
+  const cookieSecure = authConfig.secureCookie || cookieSameSite === "None";
 
   app.use(express.json({ limit: "1mb" }));
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.has(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      res.setHeader("Vary", mergeVary(res.getHeader("Vary"), "Origin"));
+    }
+
+    if (hasCorsPolicy && req.method === "OPTIONS") {
+      return res.status(204).end();
+    }
+
+    return next();
+  });
+
   app.use((req, _res, next) => {
     const cookies = parseCookies(req.headers.cookie || "");
     req.authUser = verifyAuthToken(cookies[AUTH_COOKIE], authConfig);
@@ -98,7 +138,9 @@ function createApp(service) {
         "Set-Cookie",
         buildCookie(AUTH_COOKIE, token, {
           maxAgeSeconds: remember ? maxAgeSeconds : null,
-          secure: authConfig.secureCookie,
+          secure: cookieSecure,
+          sameSite: cookieSameSite,
+          domain: authConfig.cookieDomain,
         }),
       );
 
@@ -110,7 +152,14 @@ function createApp(service) {
   );
 
   app.post("/api/auth/logout", (req, res) => {
-    res.setHeader("Set-Cookie", clearCookie(AUTH_COOKIE, authConfig.secureCookie));
+    res.setHeader(
+      "Set-Cookie",
+      clearCookie(AUTH_COOKIE, {
+        secure: cookieSecure,
+        sameSite: cookieSameSite,
+        domain: authConfig.cookieDomain,
+      }),
+    );
     res.json({ data: { authenticated: false } });
   });
 
@@ -290,35 +339,53 @@ function createApp(service) {
     }),
   );
 
-  const publicDir = path.join(__dirname, "..", "public");
-  app.use((req, res, next) => {
-    if (req.path === "/login.html" && req.authUser) {
-      return res.redirect("/index.html");
-    }
+  if (serveStatic) {
+    const publicDir = path.join(__dirname, "..", "public");
+    app.use((req, res, next) => {
+      if (req.path === "/login.html" && req.authUser) {
+        return res.redirect("/index.html");
+      }
 
-    if (req.path === "/login.html" || req.path === "/styles.css" || req.path.startsWith("/js/")) {
+      if (req.path === "/login.html" || req.path === "/styles.css" || req.path.startsWith("/js/")) {
+        return next();
+      }
+
+      if (isPageRequest(req) && !req.authUser) {
+        const nextPath = encodeURIComponent(req.originalUrl || "/index.html");
+        return res.redirect(`/login.html?next=${nextPath}`);
+      }
+
       return next();
-    }
+    });
+    app.use(express.static(publicDir));
 
-    if (isPageRequest(req) && !req.authUser) {
-      const nextPath = encodeURIComponent(req.originalUrl || "/index.html");
-      return res.redirect(`/login.html?next=${nextPath}`);
-    }
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api/")) {
+        return next(new AppError(404, "API_NOT_FOUND", "API route not found"));
+      }
+      if (!req.authUser) {
+        const nextPath = encodeURIComponent(req.originalUrl || "/index.html");
+        return res.redirect(`/login.html?next=${nextPath}`);
+      }
+      return res.sendFile(path.join(publicDir, "index.html"));
+    });
+  } else {
+    app.get("/", (_req, res) => {
+      res.json({
+        data: {
+          service: "work-schedule-api",
+          mode: "api-only",
+        },
+      });
+    });
 
-    return next();
-  });
-  app.use(express.static(publicDir));
-
-  app.get("*", (req, res, next) => {
-    if (req.path.startsWith("/api/")) {
-      return next(new AppError(404, "API_NOT_FOUND", "API route not found"));
-    }
-    if (!req.authUser) {
-      const nextPath = encodeURIComponent(req.originalUrl || "/index.html");
-      return res.redirect(`/login.html?next=${nextPath}`);
-    }
-    return res.sendFile(path.join(publicDir, "index.html"));
-  });
+    app.use((req, _res, next) => {
+      if (req.path.startsWith("/api/")) {
+        return next(new AppError(404, "API_NOT_FOUND", "API route not found"));
+      }
+      return next(new AppError(404, "RESOURCE_NOT_FOUND", "Resource not found"));
+    });
+  }
 
   app.use((error, _req, res, _next) => {
     const status = error.status || 500;

@@ -7,6 +7,35 @@ const SESSION_HOURS = 12;
 const DEFAULT_AUTH_CONFIG_PATH = path.join(__dirname, "..", "config", "auth.json");
 const SCRYPT_KEY_LENGTH = 64;
 
+function parseBoolean(value, fallback = false) {
+  if (value == null || value === "") {
+    return fallback;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+function normalizeSameSite(value, fallback = "Lax") {
+  const raw = String(value || fallback)
+    .trim()
+    .toLowerCase();
+
+  if (raw === "strict") {
+    return "Strict";
+  }
+  if (raw === "none") {
+    return "None";
+  }
+  return "Lax";
+}
+
 function safeEqual(a, b) {
   const ab = Buffer.from(String(a));
   const bb = Buffer.from(String(b));
@@ -55,13 +84,18 @@ function normalizeAuthConfig(raw, source) {
   }
 
   const rememberDays = Number(raw.rememberDays || 30);
+  const secureCookie = parseBoolean(process.env.WORK_SCHEDULE_COOKIE_SECURE, Boolean(raw.cookieSecure));
+  const cookieSameSite = normalizeSameSite(process.env.WORK_SCHEDULE_COOKIE_SAMESITE || raw.cookieSameSite);
+  const cookieDomain = (process.env.WORK_SCHEDULE_COOKIE_DOMAIN || raw.cookieDomain || "").trim() || null;
 
   return {
     username: raw.username,
     passwordHash: raw.passwordHash,
     secret: raw.sessionSecret,
     rememberDays: Number.isFinite(rememberDays) && rememberDays > 0 ? rememberDays : 30,
-    secureCookie: Boolean(raw.cookieSecure),
+    secureCookie,
+    cookieSameSite,
+    cookieDomain,
     source,
   };
 }
@@ -115,7 +149,11 @@ function verifyAuthToken(token, config) {
 }
 
 function buildCookie(name, value, options = {}) {
-  const parts = [`${name}=${encodeURIComponent(value)}`, "Path=/", "HttpOnly", "SameSite=Lax"];
+  const sameSite = normalizeSameSite(options.sameSite);
+  const parts = [`${name}=${encodeURIComponent(value)}`, "Path=/", "HttpOnly", `SameSite=${sameSite}`];
+  if (options.domain) {
+    parts.push(`Domain=${String(options.domain).trim()}`);
+  }
   if (options.maxAgeSeconds) {
     parts.push(`Max-Age=${Math.floor(options.maxAgeSeconds)}`);
   }
@@ -125,8 +163,19 @@ function buildCookie(name, value, options = {}) {
   return parts.join("; ");
 }
 
-function clearCookie(name, secure) {
-  return [`${name}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0", secure ? "Secure" : ""]
+function clearCookie(name, options = {}) {
+  const normalized = typeof options === "boolean" ? { secure: options } : options;
+  const sameSite = normalizeSameSite(normalized.sameSite);
+
+  return [
+    `${name}=`,
+    "Path=/",
+    "HttpOnly",
+    `SameSite=${sameSite}`,
+    normalized.domain ? `Domain=${String(normalized.domain).trim()}` : "",
+    "Max-Age=0",
+    normalized.secure ? "Secure" : "",
+  ]
     .filter(Boolean)
     .join("; ");
 }

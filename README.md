@@ -33,9 +33,9 @@
 - 访问控制：单用户登录，凭据保存在本地 `config/auth.json`，密码使用哈希存储
 - 并发写入：写操作串行队列 + 临时文件原子替换 + 自动备份回滚
 - 默认端口：`8998`（可通过环境变量 `PORT` 覆盖）
-- 前端：多页面导航（总览/任务/分类/统计/异常）
-- 任务创建：弹窗表单，字段说明清晰，截止日期仅需日期
-- 运维：页面内支持一键停止服务（`停止软件` 按钮）
+- 运行模式：默认 `API-only`（用于前后端分离），可选兼容旧静态页面
+- 鉴权：HttpOnly Cookie（支持会话登录与自动登录）
+- API 能力：任务/检查点/分类/推荐/统计/异常/系统控制
 
 ## 快速启动（Linux）
 
@@ -60,10 +60,10 @@ npm run auth:init
 npm start
 ```
 
-5. 浏览器访问：
+5. 验证 API 可用：
 
-```text
-http://<服务器IP>:8998
+```bash
+curl http://<服务器IP>:8998/api/health
 ```
 
 如果要自定义端口：
@@ -71,6 +71,27 @@ http://<服务器IP>:8998
 ```bash
 PORT=9000 npm start
 ```
+
+## 前后端分离运行参数
+
+默认模式为 `API-only`。前端建议独立部署（任意框架均可），通过 HTTP 调用本服务 API。
+
+常用环境变量：
+
+| 变量名 | 默认值 | 说明 |
+| --- | --- | --- |
+| `PORT` | `8998` | 后端监听端口 |
+| `WORK_SCHEDULE_CORS_ORIGINS` | 空 | 允许跨域访问的前端源，多个以英文逗号分隔，例如 `http://localhost:5173,https://app.example.com` |
+| `WORK_SCHEDULE_COOKIE_SAMESITE` | `Lax` | 登录 Cookie 的 SameSite，取值 `Lax` / `Strict` / `None` |
+| `WORK_SCHEDULE_COOKIE_SECURE` | 继承 `config/auth.json` 的 `cookieSecure` | 是否强制 `Secure` Cookie |
+| `WORK_SCHEDULE_COOKIE_DOMAIN` | 空 | Cookie Domain（按需配置） |
+| `WORK_SCHEDULE_SERVE_STATIC` | `false` | 设为 `true` 可兼容内置静态页面（旧模式） |
+
+跨域部署建议：
+
+- 浏览器前端与 API 不同源时，设置 `WORK_SCHEDULE_CORS_ORIGINS`。
+- 若要跨站携带 Cookie，通常需要 `WORK_SCHEDULE_COOKIE_SAMESITE=None` 且 `WORK_SCHEDULE_COOKIE_SECURE=true`（生产环境配 HTTPS）。
+- 前端请求需开启凭据（如 `fetch(..., { credentials: "include" })`）。
 
 ## API 概览
 
