@@ -22,31 +22,93 @@
 4. 人机交互友好。
 5. 选择合适的技术栈，我希望这是一个轻量的，能部署到服务器上的，通过网页能访问的软件。
 
-你在设计与编写的过程中遇到任何需要澄清的问题，尽管问我。
+## 界面概览
 
-## 当前实现
+项目采用前后端分离架构，前端为 React 单页应用。
 
-本仓库已经实现一个单用户学习任务规划 Web 应用，特性如下：
+### 登录页
 
-- 服务端：Node.js + Express
-- 存储：服务器本地 JSON（`data/`）
-- 访问控制：单用户登录，凭据保存在本地 `config/auth.json`，密码使用哈希存储
-- 并发写入：写操作串行队列 + 临时文件原子替换 + 自动备份回滚
-- 默认端口：`8998`（可通过环境变量 `PORT` 覆盖）
-- 运行模式：默认 `API-only`（用于前后端分离），可选兼容旧静态页面
-- 鉴权：HttpOnly Cookie（支持会话登录与自动登录）
-- API 能力：任务/检查点/分类/推荐/统计/异常/系统控制
+简洁的居中登录表单，包含用户名、密码输入框和"记住我"复选框。登录后跳转至仪表盘。
 
-## 快速启动（Linux）
+### 仪表盘（今日）
 
-1. 安装 Node.js（建议 18+）与 npm
-2. 安装依赖：
+顶部显示当前日期，主要分为三个区域：
+
+- **当前进行中** — 正在进行的任务卡片，可一键暂停或完成，显示进度条和估时/实际用时对比。
+- **各分类推荐** — 每个分类下评分最高的待办任务，可一键开始，显示优先级、估时、截止日期和推荐评分。
+- **今日摘要** — 三个指标卡片：今日用时、本周用时、今日完成任务数。
+
+### 任务列表 / 看板
+
+左侧为分类侧边栏（全部 + 各分类），右侧为主区域：
+
+- **视图切换** — 列表视图（紧凑行式）与看板视图（待开始 / 进行中 / 已暂停三列）。
+- **排序方式** — 按评分、优先级、截止日期、剩余时间。
+- **新建任务** — 弹出模态框，填写标题、分类、优先级（P1-P5）、截止日期、估时。
+- **任务行** — 左侧优先级色条、标题、状态徽章、截止日期、进度条。异常任务有 ⚠ 标记。
+
+### 任务详情
+
+点击任意任务进入详情页，功能包括：
+
+- 点击标题直接编辑
+- 分类、优先级、截止日期的下拉/输入修改（完成后只读）
+- 估时 vs 实际用时的对比条形图
+- 标签展示
+- 进度条
+- 操作按钮：开始 / 暂停 / 继续 / 完成 / 推迟（按状态动态显示）
+- 完成时弹出模态框填写实际花费时间
+- 推迟时选择"延期天数"或"指定日期"
+- 检查点管理：添加、完成、跳过、取消完成/跳过、删除
+
+### 统计分析
+
+六个摘要指标卡片：今日用时、本周用时、本周完成数、完成率、准时率、平均超时比。
+
+三个图表：
+
+- **分类用时对比** — 柱状图，每个分类的预计 vs 实际时间
+- **优先级完成分布** — 环形饼图，各优先级完成任务数占比
+- **每日用时趋势** — 折线图，近 7 天每日学习时间
+
+### 异常任务
+
+列出所有带异常标记的任务（已推迟、跳过检查点），可点击查看详情或标记为已忽略。
+
+### 归档
+
+按分类筛选已完成任务，每行显示省时 / 准时 / 超时状态及用时百分比。
+
+### 设置 — 分类管理
+
+自定义分类的增删，并列出系统内置只读分类（默认分类、异常任务桶、归档桶）。
+
+## 技术栈
+
+- **后端**：Node.js + Express
+- **前端**：React 18 + TypeScript + Vite 5 + Tailwind CSS 3 + Recharts 3 + Lucide React
+- **存储**：服务器本地 JSON（`data/`），串行写入队列 + 原子文件替换 + 自动备份回滚
+- **认证**：单用户登录，密码 scrypt 哈希，HttpOnly Cookie（支持会话与自动登录）
+- **运行模式**：默认 API-only（前后端分离），可选兼容旧静态页面
+
+## 快速启动（本地开发）
+
+### 前置要求
+
+- Node.js 18+
+- npm
+
+### 1. 安装依赖
 
 ```bash
+# 后端依赖
 npm install
+
+# 前端依赖
+cd frontend && npm install && cd ..
 ```
 
-3. 初始化登录凭据：
+### 2. 初始化登录凭据
 
 ```bash
 npm run auth:init
@@ -54,78 +116,79 @@ npm run auth:init
 
 按提示输入用户名和密码；留空则随机生成。生成的 `config/auth.json` 不应提交到版本库。
 
-4. 启动服务（默认 8998 端口）：
+### 3. 启动开发服务
+
+使用一键脚本同时启动后端（8998 端口）和前端（5173 端口）：
 
 ```bash
-npm start
+./start.sh
 ```
 
-5. 验证 API 可用：
+或分别启动：
 
 ```bash
-curl http://<服务器IP>:8998/api/health
+# 终端 1：后端
+WORK_SCHEDULE_CORS_ORIGINS=http://localhost:5173 npm start
+
+# 终端 2：前端
+cd frontend && npm run dev
 ```
 
-如果要自定义端口：
+### 4. 访问应用
+
+打开浏览器访问 `http://localhost:5173`，使用刚才初始化的凭据登录。
+
+### 停止服务
 
 ```bash
-PORT=9000 npm start
+./stop.sh
 ```
 
-## 前后端分离运行参数
-
-默认模式为 `API-only`。前端建议独立部署（任意框架均可），通过 HTTP 调用本服务 API。
-
-常用环境变量：
+## 环境变量
 
 | 变量名 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PORT` | `8998` | 后端监听端口 |
-| `WORK_SCHEDULE_CORS_ORIGINS` | 空 | 允许跨域访问的前端源，多个以英文逗号分隔，例如 `http://localhost:5173,https://app.example.com` |
-| `WORK_SCHEDULE_COOKIE_SAMESITE` | `Lax` | 登录 Cookie 的 SameSite，取值 `Lax` / `Strict` / `None` |
-| `WORK_SCHEDULE_COOKIE_SECURE` | 继承 `config/auth.json` 的 `cookieSecure` | 是否强制 `Secure` Cookie |
-| `WORK_SCHEDULE_COOKIE_DOMAIN` | 空 | Cookie Domain（按需配置） |
-| `WORK_SCHEDULE_SERVE_STATIC` | `false` | 设为 `true` 可兼容内置静态页面（旧模式） |
-
-跨域部署建议：
-
-- 浏览器前端与 API 不同源时，设置 `WORK_SCHEDULE_CORS_ORIGINS`。
-- 若要跨站携带 Cookie，通常需要 `WORK_SCHEDULE_COOKIE_SAMESITE=None` 且 `WORK_SCHEDULE_COOKIE_SECURE=true`（生产环境配 HTTPS）。
-- 前端请求需开启凭据（如 `fetch(..., { credentials: "include" })`）。
+| `WORK_SCHEDULE_CORS_ORIGINS` | 空 | 允许跨域的前端源，多个以逗号分隔 |
+| `WORK_SCHEDULE_COOKIE_SAMESITE` | `Lax` | 登录 Cookie 的 SameSite |
+| `WORK_SCHEDULE_COOKIE_SECURE` | 继承 auth.json | 是否强制 Secure Cookie |
+| `WORK_SCHEDULE_COOKIE_DOMAIN` | 空 | Cookie Domain |
+| `WORK_SCHEDULE_SERVE_STATIC` | `false` | 设为 `true` 可兼容旧静态页面 |
+| `VITE_API_BASE`（前端） | `http://localhost:8998` | API 地址，可在 `frontend/.env` 中设置 |
 
 ## API 概览
 
 - 任务
-	- `GET /api/tasks`
-	- `GET /api/tasks/:id`
-	- `POST /api/tasks`
-	- `PATCH /api/tasks/:id`
-	- `DELETE /api/tasks/:id`
-	- `PATCH /api/tasks/:id/anomaly-ignore`
-	- `POST /api/tasks/:id/start`
-	- `POST /api/tasks/:id/pause`
-	- `POST /api/tasks/:id/resume`
-	- `POST /api/tasks/:id/complete`
-	- `POST /api/tasks/:id/postpone`
+  - `GET /api/tasks`
+  - `GET /api/tasks/:id`
+  - `POST /api/tasks`
+  - `PATCH /api/tasks/:id`
+  - `DELETE /api/tasks/:id`
+  - `PATCH /api/tasks/:id/anomaly-ignore`
+  - `POST /api/tasks/:id/start`
+  - `POST /api/tasks/:id/pause`
+  - `POST /api/tasks/:id/resume`
+  - `POST /api/tasks/:id/complete`
+  - `POST /api/tasks/:id/postpone`
 - 检查点
-	- `POST /api/tasks/:id/checkpoints`
-	- `PATCH /api/checkpoints/:id`
-	- `DELETE /api/checkpoints/:id`
-	- `POST /api/checkpoints/:id/complete`
-	- `POST /api/checkpoints/:id/skip`
-	- `POST /api/checkpoints/:id/uncomplete`
+  - `POST /api/tasks/:id/checkpoints`
+  - `PATCH /api/checkpoints/:id`
+  - `DELETE /api/checkpoints/:id`
+  - `POST /api/checkpoints/:id/complete`
+  - `POST /api/checkpoints/:id/skip`
+  - `POST /api/checkpoints/:id/uncomplete`
 - 推荐
-	- `GET /api/recommendations/by-category`
+  - `GET /api/recommendations/by-category`
 - 统计
-	- `GET /api/statistics/overview`
+  - `GET /api/statistics/overview`
 - 异常
-	- `GET /api/tasks/anomalies`
+  - `GET /api/tasks/anomalies`
 - 分类
-	- `GET /api/categories`
-	- `POST /api/categories`
-	- `DELETE /api/categories/:id`
+  - `GET /api/categories`
+  - `POST /api/categories`
+  - `DELETE /api/categories/:id`
 - 系统
-	- `POST /api/system/stop`
+  - `POST /api/system/stop`
 
 ## 数据文件
 
@@ -135,4 +198,8 @@ PORT=9000 npm start
 - `data/checkpoints.json`
 - `data/categories.json`
 - `data/statistics_cache.json`
-- `data/backups/*`
+- `data/backups/`
+
+## 部署
+
+详细部署指南请参阅 [Usage.md](./Usage.md)。

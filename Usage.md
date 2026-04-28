@@ -1,43 +1,43 @@
 # Usage: 部署、启动与停止指南
 
-本文档说明如何把本项目部署到另一台云服务器，并完成安装、启动、停止、升级和数据迁移。
+本文档说明如何将本项目部署到云服务器，并完成安装、启动、停止、升级和数据迁移。
 
 ## 1. 部署方案概览
 
-推荐部署结构：
+### 方案一：Nginx 反代 + 前端构建产物（推荐）
 
-```text
+```
 用户浏览器
   |
   | HTTP/HTTPS
   v
-Nginx（可选，负责域名、HTTPS、反向代理）
-  |
-  | http://127.0.0.1:8998
-  v
-Node.js + Express 应用
-  |
-  v
-服务器本地 data/*.json
+Nginx（域名、HTTPS、反向代理）
+  |                   |
+  | /api/*            | /*（静态文件）
+  v                   v
+Node.js 后端 :8998    前端构建产物（dist/）
 ```
 
-首选方案：
+### 方案二：后端直接托管前端构建产物
 
-- 应用运行在服务器本地 `8998` 端口。
-- 使用 `systemd` 管理应用进程，支持开机自启、崩溃重启、日志查看。
-- 如果只通过服务器 IP 访问，可以不安装 Nginx。
-- 如果需要域名、HTTPS 或隐藏内部端口，建议使用 Nginx 反向代理。
-- 数据保存在项目目录下的 `data/`，迁移服务器时复制该目录即可。
-- 应用要求登录访问，正式部署时必须配置访问凭据。
+```
+用户浏览器
+  |
+  | HTTP/HTTPS
+  v
+Nginx（可选）
+  |
+  v
+Node.js + Express（托管 API + 前端静态文件）
+```
+
+### 方案三：纯 API 模式（前端独立部署）
+
+前端可独立部署在任何位置（Vercel、另一台服务器等），通过 API 通信。
 
 ## 2. 服务器环境要求
 
-建议系统：
-
-- Ubuntu 22.04/24.04 LTS，或其他主流 Linux 发行版
-
-依赖：
-
+- Ubuntu 22.04/24.04 LTS 或其他主流 Linux 发行版
 - Node.js 18+
 - npm
 - git
@@ -61,8 +61,6 @@ npm -v
 
 ## 3. 获取代码
 
-选择一个部署目录，例如 `/opt/work-schedule`：
-
 ```bash
 sudo mkdir -p /opt/work-schedule
 sudo chown -R "$USER":"$USER" /opt/work-schedule
@@ -70,80 +68,60 @@ git clone <你的仓库地址> /opt/work-schedule
 cd /opt/work-schedule
 ```
 
-如果不是 Git 仓库，也可以直接上传项目目录到 `/opt/work-schedule`。
-
-安装依赖：
+安装依赖（后端 + 前端）：
 
 ```bash
 npm install
+cd frontend && npm install && cd ..
 ```
 
-## 4. 本地试运行
-
-默认端口是 `8998`：
+## 4. 构建前端
 
 ```bash
-npm start
+cd /opt/work-schedule/frontend
+npm run build
 ```
 
-看到类似输出表示启动成功：
+构建产物在 `frontend/dist/` 目录。
 
-```text
-Work Schedule server running on port 8998
-```
-
-测试接口：
+构建时可指定 API 地址。默认情况下前端请求 `http://localhost:8998`。如需修改：
 
 ```bash
-curl http://127.0.0.1:8998/api/health
+# 构建时指定 API 地址
+VITE_API_BASE=https://your-domain.com/api npm run build
 ```
 
-浏览器访问：
+也可在 `frontend/.env` 文件中设置：
 
-```text
-http://<服务器公网IP>:8998
+```
+VITE_API_BASE=https://your-domain.com/api
 ```
 
-如果云服务器安全组没有开放 `8998`，外部无法访问。可以临时开放该端口，或使用后文的 Nginx 反向代理。
+## 5. 配置后端
 
-停止试运行：
+初始化登录凭据：
 
 ```bash
-Ctrl+C
-```
-
-## 5. 使用 systemd 托管服务
-
-推荐用 `systemd` 作为正式运行方式。
-
-正式部署前，先初始化访问凭据：
-
-```bash
+cd /opt/work-schedule
 npm run auth:init
 ```
 
 脚本会要求输入用户名和密码：
 
-- 用户名留空：随机生成用户名
+- 用户名留空：随机生成
 - 密码留空：随机生成强密码
 - 自动登录有效天数留空：默认 30 天
 - HTTPS Cookie 留空：默认不启用
 
-生成的配置文件在：
+生成的配置文件在 `config/auth.json`，权限自动设为 `600`。
 
-```text
-config/auth.json
-```
-
-该文件保存的是密码哈希和 Cookie 签名密钥，不保存明文密码。脚本会把文件权限设置为 `600`。请妥善保存脚本输出的用户名和密码，密码不会再次以明文显示。
+## 6. 使用 systemd 托管后端
 
 创建服务文件：
 
 ```bash
 sudo nano /etc/systemd/system/work-schedule.service
 ```
-
-写入：
 
 ```ini
 [Unit]
@@ -158,32 +136,17 @@ Restart=always
 RestartSec=3
 Environment=NODE_ENV=production
 Environment=PORT=8998
+Environment=WORK_SCHEDULE_CORS_ORIGINS=https://your-domain.com
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-如果你把认证配置放在其他位置，可以额外设置：
-
-```ini
-Environment=WORK_SCHEDULE_AUTH_CONFIG=/path/to/auth.json
-```
-
-加载服务：
+**注意**：如果使用 Nginx 同域反代（方案一），无需设置 `CORS_ORIGINS`。如果前后端不同源，需要正确配置此变量。
 
 ```bash
 sudo systemctl daemon-reload
-```
-
-启动：
-
-```bash
 sudo systemctl start work-schedule
-```
-
-设置开机自启：
-
-```bash
 sudo systemctl enable work-schedule
 ```
 
@@ -199,94 +162,23 @@ sudo systemctl status work-schedule
 journalctl -u work-schedule -f
 ```
 
-停止：
+## 7. Nginx 配置
 
-```bash
-sudo systemctl stop work-schedule
-```
+### 方案一：同域部署（推荐）
 
-重启：
-
-```bash
-sudo systemctl restart work-schedule
-```
-
-## 6. 使用页面内停止按钮
-
-应用顶部有 `停止软件` 按钮，会调用：
-
-```text
-POST /api/system/stop
-```
-
-如果应用由 `npm start` 直接运行，点击后进程会退出。
-
-如果应用由 `systemd` 托管，点击停止按钮后进程会退出，但 `systemd` 因为配置了 `Restart=always`，会自动重新拉起服务。因此正式部署时建议使用：
-
-```bash
-sudo systemctl stop work-schedule
-```
-
-如果你希望页面内停止按钮能真正停止服务，需要把服务文件中的：
-
-```ini
-Restart=always
-```
-
-改成：
-
-```ini
-Restart=on-failure
-```
-
-然后执行：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart work-schedule
-```
-
-## 7. 登录与退出
-
-浏览器访问应用时会先进入登录页：
-
-```text
-http://<服务器公网IP>:8998/login.html
-```
-
-输入 `npm run auth:init` 初始化时生成或填写的用户名和密码即可登录。
-
-如果勾选 `自动登录`，浏览器会保存一个签名 Cookie。这个 Cookie 不保存明文密码，只保存服务器可校验的登录令牌；在有效期内再次访问无需输入凭据。
-
-退出当前用户：
-
-- 点击页面顶部 `退出登录`
-- 或请求接口：
-
-```bash
-curl -X POST http://127.0.0.1:8998/api/auth/logout
-```
-
-退出后浏览器中的登录 Cookie 会被清除。
-
-## 8. Nginx 反向代理（可选但推荐）
-
-如果你希望通过 `80/443` 端口访问，而不是暴露 `8998`，可以使用 Nginx。
-
-创建配置：
-
-```bash
-sudo nano /etc/nginx/sites-available/work-schedule
-```
-
-写入：
+前端构建产物 + API 反代都在同一个域名下：
 
 ```nginx
 server {
     listen 80;
     server_name your-domain.com;
 
-    location / {
+    # 前端静态文件
+    root /opt/work-schedule/frontend/dist;
+    index index.html;
+
+    # API 反向代理
+    location /api/ {
         proxy_pass http://127.0.0.1:8998;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -294,14 +186,21 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+
+    # SPA 路由：所有非文件请求返回 index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
 }
 ```
 
-如果没有域名，只想用 IP，可以临时写：
+**关键**：最后一行 `try_files $uri $uri/ /index.html` 确保 React 路由（如 `/app/tasks`）刷新时不会 404。
 
-```nginx
-server_name _;
-```
+### 方案二：同域部署（后端托管前端文件）
+
+如果希望后端同时托管前端构建产物，把构建产物复制到 `public/` 目录，然后设置 `WORK_SCHEDULE_SERVE_STATIC=true`。
+
+不过更推荐使用方案一（Nginx 托管静态文件），性能更好且配置灵活。
 
 启用配置：
 
@@ -311,38 +210,47 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-此时访问：
+## 8. HTTPS（可选）
 
-```text
-http://<服务器公网IP>
-```
-
-或：
-
-```text
-http://your-domain.com
-```
-
-## 9. HTTPS（可选）
-
-如果有域名，推荐用 Certbot 配置 HTTPS：
+有域名时推荐用 Certbot 配置 HTTPS：
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d your-domain.com
 ```
 
-证书续期通常会自动配置。可检查：
+## 9. 登录与使用
 
-```bash
-sudo systemctl status certbot.timer
-```
+### 登录
+
+浏览器访问 `https://your-domain.com`（或 `http://服务器IP`），进入登录页。
+
+输入 `npm run auth:init` 时设置的用户名和密码。
+
+勾选"记住我"可保存登录会话，有效期内免密访问。
+
+### 页面导航
+
+左侧侧边栏（手机端为底部导航栏）包含：
+
+| 页面 | 说明 |
+| --- | --- |
+| 今日 | 仪表盘：当前任务、各分类推荐、今日摘要 |
+| 任务 | 任务列表/看板，按分类筛选、多维度排序 |
+| 统计 | 分析面板：完成率、按时率、分类用时、优先级分布、每日趋势 |
+| 异常 | 审查被推迟或跳过检查点的任务 |
+| 归档 | 已完成任务回顾，显示省时/准时/超时标记 |
+| 设置 | 管理自定义分类 |
+
+### 退出登录
+
+点击侧边栏底部的"退出登录"按钮。
 
 ## 10. 数据文件与迁移
 
-核心数据在：
+核心数据在 `data/` 目录：
 
-```text
+```
 data/tasks.json
 data/checkpoints.json
 data/categories.json
@@ -351,23 +259,18 @@ data/backups/
 config/auth.json
 ```
 
-迁移到新服务器时，在旧服务器执行：
+迁移到新服务器时：
 
 ```bash
 cd /opt/work-schedule
 tar -czf work-schedule-data.tar.gz data config/auth.json
 ```
 
-把压缩包上传到新服务器项目目录后：
+上传到新服务器项目目录后：
 
 ```bash
 cd /opt/work-schedule
 tar -xzf work-schedule-data.tar.gz
-```
-
-然后重启服务：
-
-```bash
 sudo systemctl restart work-schedule
 ```
 
@@ -380,7 +283,15 @@ tar -czf "backup-$(date +%F-%H%M%S).tar.gz" data config/auth.json
 
 ## 11. 升级部署
 
-如果使用 Git：
+```bash
+cd /opt/work-schedule
+git pull
+npm install
+cd frontend && npm install && npm run build && cd ..
+sudo systemctl restart work-schedule
+```
+
+如果前端无变化，可跳过前端构建步骤：
 
 ```bash
 cd /opt/work-schedule
@@ -389,154 +300,123 @@ npm install
 sudo systemctl restart work-schedule
 ```
 
-如果通过上传文件升级：
+## 12. 本地开发
 
-1. 停止服务：
-
-```bash
-sudo systemctl stop work-schedule
-```
-
-2. 备份数据：
+开发时使用 `start.sh` 脚本同时启动后端和前端开发服务器：
 
 ```bash
-cd /opt/work-schedule
-tar -czf "backup-$(date +%F-%H%M%S).tar.gz" data config/auth.json
+./start.sh
 ```
 
-3. 覆盖代码，但不要删除 `data/`。
+- 后端：`http://localhost:8998`
+- 前端：`http://localhost:5173`（支持热更新）
 
-4. 安装依赖并启动：
+停止开发环境：
 
 ```bash
-npm install
-sudo systemctl start work-schedule
+./stop.sh
 ```
 
-## 12. 防火墙与安全组
+## 13. 防火墙与安全组
 
-如果直接访问 `8998`：
+### 使用 Nginx（推荐）
 
-- 云服务器安全组需要开放 TCP `8998`
-- 系统防火墙也需要允许该端口
-
-Ubuntu UFW 示例：
-
-```bash
-sudo ufw allow 8998/tcp
-sudo ufw status
-```
-
-如果使用 Nginx：
-
-- 云服务器安全组开放 `80` 和 `443`
-- 不需要对公网开放 `8998`
-
-UFW 示例：
+- 开放端口：`80`（HTTP）和 `443`（HTTPS）
+- 无需对公网开放 `8998`
 
 ```bash
 sudo ufw allow "Nginx Full"
-sudo ufw status
 ```
 
-## 13. 常见问题
+### 直接访问 8998
+
+- 云服务器安全组开放 TCP `8998`
+- 系统防火墙允许 `8998`
+
+```bash
+sudo ufw allow 8998/tcp
+```
+
+### 前端开发服务器（5173）
+
+本地开发时需要开放：
+
+```bash
+sudo ufw allow 5173/tcp
+```
+
+## 14. 常见问题
 
 ### 端口被占用
-
-错误示例：
 
 ```text
 EADDRINUSE: address already in use 0.0.0.0:8998
 ```
 
-查看占用：
-
 ```bash
 sudo lsof -i :8998
-```
-
-解决方式：
-
-```bash
 sudo systemctl stop work-schedule
 ```
 
-或换端口：
+或换端口启动。
 
-```bash
-PORT=9000 npm start
+### 前端页面刷新后 404
+
+检查 Nginx 配置中是否包含：
+
+```nginx
+location / {
+    try_files $uri $uri/ /index.html;
+}
 ```
 
-systemd 中换端口则修改：
+这是 React SPA 路由必需的配置。
 
-```ini
-Environment=PORT=9000
-```
+### API 请求 401
 
-然后：
+- 登录会话已过期，重新登录即可
+- 前后端时间不同步可能导致令牌验证失败
+- Cookie 跨域配置不正确（检查 CORS_ORIGINS 和 SameSite）
 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart work-schedule
-```
+### API 请求跨域错误
 
-### 外网无法访问
+- 确认后端的 `WORK_SCHEDULE_CORS_ORIGINS` 包含了前端实际访问地址
+- 使用同域部署（Nginx 反代 + 静态文件）可避免跨域问题
 
-依次检查：
+### 数据丢失
 
 ```bash
+# 检查当前运行目录
 sudo systemctl status work-schedule
-curl http://127.0.0.1:8998/api/health
-sudo ufw status
-```
 
-还要检查云厂商安全组是否开放对应端口。
-
-### 数据没有了
-
-先确认当前运行目录是否正确：
-
-```bash
-sudo systemctl status work-schedule
-```
-
-检查 `WorkingDirectory` 是否是项目目录。
-
-再查看：
-
-```bash
+# 查看 data 目录
 ls -lah /opt/work-schedule/data
 ```
 
-本项目会在 `data/backups/` 下保留最近备份，可用于人工恢复。
+本项目在 `data/backups/` 下保留最近 5 份备份，可用于手动恢复。
 
 ### 服务反复重启
-
-查看日志：
 
 ```bash
 journalctl -u work-schedule -n 100 --no-pager
 ```
 
-常见原因：
+常见原因：Node.js 版本过低、端口占用、目录权限不正确、JSON 文件损坏。
 
-- Node.js 版本过低
-- 端口占用
-- 项目目录权限不正确
-- `data/*.json` 文件损坏
-
-## 14. 推荐的正式部署检查清单
+## 15. 正式部署检查清单
 
 - [ ] Node.js 版本为 18+
-- [ ] `npm install` 成功
+- [ ] 后端 `npm install` 成功
+- [ ] 前端 `npm install` 成功
+- [ ] 前端 `npm run build` 成功
 - [ ] 已运行 `npm run auth:init`
-- [ ] 已确认 `config/auth.json` 权限为 `600`
-- [ ] 已妥善保存初始化脚本输出的用户名和密码
+- [ ] 已妥善保存用户名和密码
 - [ ] `curl http://127.0.0.1:8998/api/health` 成功
-- [ ] `systemd` 服务能启动
+- [ ] `systemd` 服务正常启动
 - [ ] 已设置开机自启
-- [ ] 已确认 `data/` 目录存在且有写权限
-- [ ] 已确认云服务器安全组开放正确端口
-- [ ] 如使用域名，Nginx 反代正常
+- [ ] 前端页面可正常访问，无 404
+- [ ] 登录、任务 CRUD、统计等功能正常
+- [ ] 安全组和防火墙已正确配置
+- [ ] 如使用域名，Nginx 配置正确
 - [ ] 如使用 HTTPS，证书配置正常
-- [ ] 已建立 `data/` 备份流程
+- [ ] 已建立数据备份流程
