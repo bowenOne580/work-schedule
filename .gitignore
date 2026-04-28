@@ -4,3 +4,6 @@ config/auth.json
 *.log
 .codex
 work-schedule-migrate.tar.gz
+.agents/
+.claude/
+fronted.md
