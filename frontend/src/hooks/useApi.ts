@@ -79,20 +79,22 @@ export function useMutation<TArg, TResult = unknown>(
   const [pending, setPending] = useState(false)
   const fnRef = useRef(fn)
   fnRef.current = fn
+  const optsRef = useRef(opts)
+  optsRef.current = opts
 
   const mutate = useCallback(async (arg: TArg) => {
     setPending(true)
     try {
       const result = await fnRef.current(arg)
-      opts?.onSuccess?.(result, arg)
+      optsRef.current?.onSuccess?.(result, arg)
       return result
     } catch (err) {
-      opts?.onError?.(err)
+      optsRef.current?.onError?.(err)
       throw err
     } finally {
       setPending(false)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   return { mutate, pending }
 }

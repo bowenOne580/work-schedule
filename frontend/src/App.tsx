@@ -3,11 +3,13 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useQuery } from './hooks/useApi'
 import { authApi } from './api'
 import AppShell from './components/AppShell'
+import ErrorBoundary from './components/ErrorBoundary'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import TasksPage from './pages/TasksPage'
 import AnomaliesPage from './pages/AnomaliesPage'
 import SettingsPage from './pages/SettingsPage'
+import ArchivePage from './pages/ArchivePage'
 
 const StatsPage = lazy(() => import('./pages/StatsPage'))
 
@@ -36,24 +38,27 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route
-        path="/app"
-        element={
-          <AuthGuard>
-            <AppShell />
-          </AuthGuard>
-        }
-      >
-        <Route index element={<DashboardPage />} />
-        <Route path="tasks" element={<TasksPage />} />
-        <Route path="tasks/:taskId" element={<TasksPage />} />
-        <Route path="stats" element={<Suspense fallback={<PageLoader />}><StatsPage /></Suspense>} />
-        <Route path="anomalies" element={<AnomaliesPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/app" replace />} />
-    </Routes>
+    <ErrorBoundary>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/app"
+          element={
+            <AuthGuard>
+              <AppShell />
+            </AuthGuard>
+          }
+        >
+          <Route index element={<DashboardPage />} />
+          <Route path="tasks" element={<TasksPage />} />
+          <Route path="tasks/:taskId" element={<TasksPage />} />
+          <Route path="stats" element={<Suspense fallback={<PageLoader />}><StatsPage /></Suspense>} />
+          <Route path="anomalies" element={<AnomaliesPage />} />
+          <Route path="archive" element={<ArchivePage />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/app" replace />} />
+      </Routes>
+    </ErrorBoundary>
   )
 }

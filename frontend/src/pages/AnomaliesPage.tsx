@@ -16,11 +16,11 @@ const flagStyles: Record<AnomalyFlag, string> = {
 
 export default function AnomaliesPage() {
   const [viewingId, setViewingId] = useState<string | null>(null)
-  const { data: anomalies = [], loading } = useQuery('anomalies', tasksApi.anomalies)
+  const { data: anomalies = [], loading, error } = useQuery('anomalies', tasksApi.anomalies)
 
   const ignore = useMutation(
     (id: string) => tasksApi.anomalyIgnore(id, true),
-    { onSuccess: () => invalidate('anomalies') }
+    { onSuccess: () => { invalidate('anomalies'); invalidate('tasks') } }
   )
 
   if (viewingId) {
@@ -41,6 +41,10 @@ export default function AnomaliesPage() {
           </span>
         )}
       </div>
+
+      {error && (
+        <p className="text-sm text-red-500">加载失败，请刷新重试</p>
+      )}
 
       {loading && (
         <div className="flex justify-center py-8">

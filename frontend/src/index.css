@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    font-size: 112.5%; /* 17px base, up from 16px */
+  }
   * {
     box-sizing: border-box;
   }

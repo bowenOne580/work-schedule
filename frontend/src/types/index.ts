@@ -21,6 +21,7 @@ export interface Task {
   anomalyIgnored: boolean
   createdAt: string
   updatedAt: string
+  finishedAt?: string       // set when task is completed
 }
 
 export interface Checkpoint {
@@ -46,9 +47,12 @@ export interface StatisticsOverview {
   dateKey: string
   dailyMinutes: number
   weeklyMinutes: number
+  dailyDoneCount: number
+  weeklyDoneCount: number
   completionRate: number
   categoryTimeShare: Record<string, number>
   doneByPriority: Record<string, number>
+  dailyHistory: { dateKey: string; minutes: number }[]
 }
 
 export interface Recommendation {

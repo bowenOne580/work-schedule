@@ -4,7 +4,7 @@ import { tasksApi, categoriesApi } from '../api'
 import { StatusBadge, ProgressBar } from '../components/ui'
 import TaskDetail from '../components/TaskDetail'
 import type { Task, TaskStatus } from '../types'
-import { Plus, List, Columns, ChevronRight, Folder } from 'lucide-react'
+import { Plus, List, Columns, ChevronRight, Folder, ArrowUpDown } from 'lucide-react'
 import { useParams, useNavigate } from 'react-router-dom'
 
 function NewTaskModal({ onClose, defaultCategoryId }: { onClose: () => void; defaultCategoryId?: string }) {
@@ -102,7 +102,6 @@ const KANBAN_COLS: { status: TaskStatus; label: string }[] = [
   { status: 'todo', label: '待开始' },
   { status: 'in_progress', label: '进行中' },
   { status: 'paused', label: '已暂停' },
-  { status: 'done', label: '已完成' },
 ]
 
 const priorityColors: Record<number, string> = {
@@ -115,7 +114,7 @@ function isDeadlineSoon(deadline: string | null) {
   return diff >= 0 && diff <= 3
 }
 
-function CategorySidebar({ selectedCat, onSelect }: { selectedCat: string | null; onSelect: (id: string | null) => void }) {
+export function CategorySidebar({ selectedCat, onSelect }: { selectedCat: string | null; onSelect: (id: string | null) => void }) {
   const { data: categories = [] } = useQuery('categories', categoriesApi.list)
   const userCats = categories.filter(c => !c.isAnomalyBucket && !c.isArchiveBucket)
 
@@ -145,7 +144,7 @@ function CategorySidebar({ selectedCat, onSelect }: { selectedCat: string | null
   )
 }
 
-function TaskRow({ task, onClick }: { task: Task; onClick: () => void }) {
+export function TaskRow({ task, onClick }: { task: Task; onClick: () => void }) {
   return (
     <div
       onClick={onClick}
@@ -155,6 +154,9 @@ function TaskRow({ task, onClick }: { task: Task; onClick: () => void }) {
       <div className="flex-1 px-3 py-2.5 min-w-0">
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-sm font-medium text-slate-800 truncate flex-1">{task.title}</span>
+          {task.anomalyFlags?.length > 0 && !task.anomalyIgnored && (
+            <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded shrink-0">⚠ 异常</span>
+          )}
           <StatusBadge status={task.status} />
           {task.deadline && (
             <span className={`text-xs shrink-0 ${isDeadlineSoon(task.deadline) ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
@@ -177,7 +179,12 @@ function KanbanCard({ task, onClick }: { task: Task; onClick: () => void }) {
     >
       <div className="flex items-start gap-2 mb-2">
         <div className="w-1 min-h-[2rem] rounded-full shrink-0 mt-0.5" style={{ backgroundColor: priorityColors[task.manualPriority] ?? '#94A3B8' }} />
-        <p className="text-sm text-slate-800 font-medium line-clamp-2 flex-1">{task.title}</p>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-slate-800 font-medium line-clamp-2">{task.title}</p>
+          {task.anomalyFlags?.length > 0 && !task.anomalyIgnored && (
+            <span className="inline-block mt-1 text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded">⚠ 异常</span>
+          )}
+        </div>
       </div>
       <ProgressBar value={task.progress} />
       {task.deadline && (
@@ -195,15 +202,40 @@ export default function TasksPage() {
   const [selectedCat, setSelectedCat] = useState<string | null>(null)
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [showNewTask, setShowNewTask] = useState(false)
+  const [sortBy, setSortBy] = useState<'score' | 'priority' | 'deadline' | 'remaining'>('score')
 
   const selectedTaskId = urlTaskId ?? null
 
   const { data: tasks = [] } = useQuery('tasks', tasksApi.list)
 
   const visibleTasks = tasks.filter(t => {
-    if (t.categoryId === 'cat-anomaly' || t.categoryId === 'cat-archived') return false
+    if (t.status === 'done') return false
     if (selectedCat) return t.categoryId === selectedCat
     return true
+  })
+
+  const sortedTasks = [...visibleTasks].sort((a, b) => {
+    switch (sortBy) {
+      case 'priority':
+        return a.manualPriority - b.manualPriority
+      case 'deadline': {
+        if (!a.deadline && !b.deadline) return 0
+        if (!a.deadline) return 1
+        if (!b.deadline) return -1
+        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
+      }
+      case 'remaining': {
+        const remA = Math.max(0, a.estimatedMinutes - a.actualMinutes)
+        const remB = Math.max(0, b.estimatedMinutes - b.actualMinutes)
+        return remA - remB
+      }
+      case 'score':
+      default: {
+        const scoreA = (6 - a.manualPriority) * 10 + (a.deadline ? Math.max(0, 30 - (new Date(a.deadline).getTime() - Date.now()) / 86400000) : 0)
+        const scoreB = (6 - b.manualPriority) * 10 + (b.deadline ? Math.max(0, 30 - (new Date(b.deadline).getTime() - Date.now()) / 86400000) : 0)
+        return scoreB - scoreA
+      }
+    }
   })
 
   const openTask = (id: string) => navigate(`/app/tasks/${id}`)
@@ -212,7 +244,10 @@ export default function TasksPage() {
   if (selectedTaskId) {
     return (
       <div className="flex h-full">
-        <CategorySidebar selectedCat={selectedCat} onSelect={setSelectedCat} />
+        <CategorySidebar
+          selectedCat={selectedCat}
+          onSelect={id => { setSelectedCat(id); closeTask() }}
+        />
         <TaskDetail taskId={selectedTaskId} onBack={closeTask} />
       </div>
     )
@@ -224,19 +259,34 @@ export default function TasksPage() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
-            <button
-              onClick={() => setView('list')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'list' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              <List size={13} /> 列表
-            </button>
-            <button
-              onClick={() => setView('kanban')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'kanban' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              <Columns size={13} /> 看板
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setView('list')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'list' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <List size={13} /> 列表
+              </button>
+              <button
+                onClick={() => setView('kanban')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'kanban' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <Columns size={13} /> 看板
+              </button>
+            </div>
+            <div className="relative">
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as typeof sortBy)}
+                className="appearance-none pl-7 pr-3 py-1.5 text-xs font-medium bg-slate-100 rounded-lg text-slate-600 outline-none hover:bg-slate-200 cursor-pointer"
+              >
+                <option value="score">按评分</option>
+                <option value="priority">按优先级</option>
+                <option value="deadline">按截止日期</option>
+                <option value="remaining">按剩余时间</option>
+              </select>
+              <ArrowUpDown size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
           </div>
           <button
             onClick={() => setShowNewTask(true)}
@@ -249,17 +299,17 @@ export default function TasksPage() {
         <div className="flex-1 overflow-auto p-4">
           {view === 'list' ? (
             <div className="space-y-2 max-w-2xl">
-              {visibleTasks.length === 0 && (
+              {sortedTasks.length === 0 && (
                 <p className="text-sm text-slate-400 text-center py-8">暂无任务</p>
               )}
-              {visibleTasks.map(t => (
+              {sortedTasks.map(t => (
                 <TaskRow key={t.id} task={t} onClick={() => openTask(t.id)} />
               ))}
             </div>
           ) : (
             <div className="flex gap-4 h-full min-w-max">
               {KANBAN_COLS.map(({ status }) => {
-                const col = visibleTasks.filter(t => t.status === status)
+                const col = sortedTasks.filter(t => t.status === status)
                 return (
                   <div key={status} className="w-64 flex flex-col">
                     <div className="flex items-center gap-2 mb-3">

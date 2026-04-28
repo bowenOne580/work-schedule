@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useMutation, setCache } from '../hooks/useApi'
 import { authApi } from '../api'
 import {
-  LayoutDashboard, CheckSquare, BarChart2, AlertTriangle, Settings, LogOut, Menu, X,
+  LayoutDashboard, CheckSquare, BarChart2, AlertTriangle, Settings, LogOut, Menu, X, Archive,
 } from 'lucide-react'
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { to: '/app/tasks', label: '任务', icon: CheckSquare, end: false },
   { to: '/app/stats', label: '统计', icon: BarChart2, end: false },
   { to: '/app/anomalies', label: '异常', icon: AlertTriangle, end: false },
+  { to: '/app/archive', label: '归档', icon: Archive, end: false },
   { to: '/app/settings', label: '设置', icon: Settings, end: false },
 ]
 

@@ -10,6 +10,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     window.location.href = '/login'
     throw new Error('AUTH_REQUIRED')
   }
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return undefined as T
+  }
   const json = await res.json()
   if (!res.ok) throw json.error
   return json.data ?? json

@@ -14,17 +14,24 @@ export default function SettingsPage() {
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [adding, setAdding] = useState(false)
+  const [mutationError, setMutationError] = useState('')
 
-  const { data: categories = [] } = useQuery('categories', categoriesApi.list)
+  const { data: categories = [], error: loadError } = useQuery('categories', categoriesApi.list)
 
   const create = useMutation(
     () => categoriesApi.create({ name, description: desc }),
-    { onSuccess: () => { invalidate('categories'); setName(''); setDesc(''); setAdding(false) } }
+    {
+      onSuccess: () => { invalidate('categories'); setName(''); setDesc(''); setAdding(false); setMutationError('') },
+      onError: () => setMutationError('创建失败，请重试'),
+    }
   )
 
   const remove = useMutation(
     (id: string) => categoriesApi.delete(id),
-    { onSuccess: () => invalidate('categories') }
+    {
+      onSuccess: () => { invalidate('categories'); setMutationError('') },
+      onError: () => setMutationError('删除失败，请重试'),
+    }
   )
 
   const userCats = categories.filter(c => !SYSTEM_CATS.includes(c.id))
@@ -41,6 +48,10 @@ export default function SettingsPage() {
           <Plus size={13} /> 新建分类
         </button>
       </div>
+
+      {(loadError || mutationError) && (
+        <p className="text-sm text-red-500">{mutationError || '加载失败，请刷新重试'}</p>
+      )}
 
       {adding && (
         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">

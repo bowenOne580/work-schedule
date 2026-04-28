@@ -90,13 +90,21 @@ function RecommendCard({ rec, onNavigate }: { rec: Recommendation; onNavigate: (
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { data: tasks = [] } = useQuery('tasks', tasksApi.list)
+  const { data: tasks = [], error: tasksError } = useQuery('tasks', tasksApi.list)
   const { data: recommendations = [] } = useQuery('recommendations', recommendApi.byCategory)
   const { data: stats } = useQuery('stats', statsApi.overview)
 
   const inProgress = tasks.filter(t => t.status === 'in_progress')
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })
   const goToTask = (id: string) => navigate(`/app/tasks/${id}`)
+
+  if (tasksError) {
+    return (
+      <div className="flex items-center justify-center h-64 text-sm text-red-500">
+        加载失败，请刷新重试
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
@@ -136,7 +144,7 @@ export default function DashboardPage() {
             {[
               { label: '今日用时', value: fmtMinutes(stats.dailyMinutes) },
               { label: '本周用时', value: fmtMinutes(stats.weeklyMinutes) },
-              { label: '完成率', value: `${Math.round(stats.completionRate * 100)}%` },
+              { label: '完成任务', value: `${stats.dailyDoneCount ?? 0} 个` },
             ].map(({ label, value }) => (
               <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 text-center">
                 <p className="text-xl font-semibold text-slate-800">{value}</p>
