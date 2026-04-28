@@ -236,7 +236,7 @@ function createApp(service, options = {}) {
   app.post(
     "/api/tasks/:id/complete",
     asyncRoute(async (req) => {
-      return service.runTaskAction(req.params.id, ACTION.COMPLETE);
+      return service.runTaskAction(req.params.id, ACTION.COMPLETE, req.body || {});
     }),
   );
 

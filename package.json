@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "auth:init": "node scripts/initAuth.js",
-    "start": "node server.js"
+    "start": "WORK_SCHEDULE_CORS_ORIGINS=http://localhost:5173 node server.js"
   },
   "keywords": [
     "planner",
@@ -14,6 +14,10 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "express": "^4.21.2"
+    "@tanstack/react-query": "^5.100.5",
+    "express": "^4.21.2",
+    "lucide-react": "^1.11.0",
+    "react-router-dom": "^7.14.2",
+    "recharts": "^3.8.1"
   }
 }
