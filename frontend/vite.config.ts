@@ -5,5 +5,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    allowedHosts: ['todo.wbwone1.cn'],
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8998',
+      },
+    },
   },
 })

@@ -15,7 +15,7 @@ echo "$BACKEND_PID" > "$PID_FILE"
 
 echo "Starting frontend (port 5173)..."
 cd "$ROOT_DIR/frontend"
-npx vite --port 5173 &
+VITE_API_BASE= npx vite --port 5173 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" >> "$PID_FILE"
 
