@@ -48,21 +48,18 @@ export default function StatsPage() {
 
   // Dual-bar data: estimated vs actual per category
   const catBarData = Object.entries(stats.categoryTimeShare)
-    .map(([id, v]) => {
-      const entry = typeof v === 'object' ? v : { actual: Math.round((v as number) * stats.weeklyMinutes), estimated: 0 }
-      return {
-        name: catMap[id] ?? id,
-        预计: entry.estimated,
-        实际: entry.actual,
-      }
-    })
+    .map(([id, v]) => ({
+      name: catMap[id] ?? id,
+      预计: v.estimated,
+      实际: v.actual,
+    }))
     .filter(d => d.预计 > 0 || d.实际 > 0)
 
   const priorityPieData = Object.entries(stats.doneByPriority)
     .filter(([, v]) => v > 0)
     .map(([p, v]) => ({ name: `P${p}`, value: v }))
 
-  const overdueVal = stats.avgOverdueRatio as number | null
+  const overdueVal = stats.avgOverdueRatio
   const overdueColor = overdueVal === null ? 'text-slate-800' : overdueVal > 0 ? 'text-red-500' : overdueVal < 0 ? 'text-emerald-600' : 'text-slate-800'
 
   // Daily trend chart from backend daily history (persisted across restarts)

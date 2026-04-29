@@ -50,7 +50,9 @@ export interface StatisticsOverview {
   dailyDoneCount: number
   weeklyDoneCount: number
   completionRate: number
-  categoryTimeShare: Record<string, number>
+  onTimeRate: number | null
+  avgOverdueRatio: number | null
+  categoryTimeShare: Record<string, { actual: number; estimated: number; share: number }>
   doneByPriority: Record<string, number>
   dailyHistory: { dateKey: string; minutes: number }[]
 }

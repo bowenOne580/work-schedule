@@ -84,7 +84,7 @@ export default function ArchivePage() {
         </div>
 
         <div className="flex-1 overflow-auto p-4">
-          {error && <p className="text-sm text-red-500 mb-4">加载失败，请刷新重试</p>}
+          {!!error && <p className="text-sm text-red-500 mb-4">加载失败，请刷新重试</p>}
 
           {loading && (
             <div className="flex justify-center py-8">

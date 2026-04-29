@@ -42,7 +42,7 @@ export default function AnomaliesPage() {
         )}
       </div>
 
-      {error && (
+      {!!error && (
         <p className="text-sm text-red-500">加载失败，请刷新重试</p>
       )}
 
