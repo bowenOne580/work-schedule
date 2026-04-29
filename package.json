@@ -1,6 +1,6 @@
 {
   "name": "work-schedule",
-  "version": "1.0.0",
+  "version": "1.1.4",
   "description": "Lightweight learning task planner with JSON storage",
   "main": "server.js",
   "scripts": {
