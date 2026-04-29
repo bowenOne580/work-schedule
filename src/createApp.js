@@ -405,11 +405,11 @@ function createApp(service, options = {}) {
         );
 
         console.log("[update] Installing dependencies...");
-        execSync("npm install", { cwd, timeout: 120_000, stdio: "pipe", encoding: "utf8" });
-        execSync("npm install", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "pipe", encoding: "utf8" });
+        execSync("npm install", { cwd, timeout: 120_000, stdio: "inherit", encoding: "utf8" });
+        execSync("npm install", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "inherit", encoding: "utf8" });
 
         console.log("[update] Building frontend...");
-        execSync("npm run build", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "pipe", encoding: "utf8" });
+        execSync("npm run build", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "inherit", encoding: "utf8" });
 
         fs.rmSync(tmpDir, { recursive: true });
         updating = false;
