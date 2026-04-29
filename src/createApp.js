@@ -1,4 +1,6 @@
 const path = require("node:path");
+const fs = require("node:fs");
+const { execSync } = require("node:child_process");
 const express = require("express");
 const { AppError } = require("./errors");
 const { ACTION } = require("./constants");
@@ -316,6 +318,111 @@ function createApp(service, options = {}) {
     setTimeout(() => {
       process.exit(0);
     }, 200);
+  });
+
+  app.get(
+    "/api/system/export",
+    asyncRoute(async () => {
+      return service.exportAllData();
+    }),
+  );
+
+  app.post(
+    "/api/system/import",
+    asyncRoute(async (req) => {
+      return service.importData(req.body);
+    }),
+  );
+
+  app.get(
+    "/api/system/version",
+    asyncRoute(async () => {
+      const pkg = require("../package.json");
+      const info = { version: pkg.version.replace(/^v/, ""), latestVersion: "" };
+
+      try {
+        const res = await fetch("https://api.github.com/repos/bowenOne580/work-schedule/tags?per_page=5", {
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) {
+          const tags = await res.json();
+          if (Array.isArray(tags) && tags.length > 0) {
+            info.latestVersion = tags[0].name.replace(/^v/, "");
+          }
+        }
+      } catch {
+        // GitHub API unreachable — silently ignore
+      }
+
+      return info;
+    }),
+  );
+
+  let updating = false;
+
+  app.post("/api/system/update", (req, res) => {
+    if (updating) {
+      return res.status(400).json({
+        error: { code: "ALREADY_UPDATING", message: "正在更新中，请勿重复操作", details: null },
+      });
+    }
+    updating = true;
+
+    const cwd = path.join(__dirname, "..");
+    const tmpZip = "/tmp/work-schedule-update.zip";
+    const tmpDir = "/tmp/work-schedule-update";
+
+    res.json({ data: { message: "正在下载更新...", status: "downloading" } });
+
+    (async () => {
+      try {
+        console.log("[update] Downloading latest code from GitHub...");
+        const response = await fetch("https://api.github.com/repos/bowenOne580/work-schedule/zipball/main", {
+          signal: AbortSignal.timeout(60_000),
+        });
+        if (!response.ok) {
+          throw new Error(`GitHub responded with ${response.status}`);
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(tmpZip, buffer);
+        console.log("[update] Download complete.");
+
+        console.log("[update] Extracting zip...");
+        if (fs.existsSync(tmpDir)) {
+          fs.rmSync(tmpDir, { recursive: true });
+        }
+        fs.mkdirSync(tmpDir, { recursive: true });
+        execSync(`unzip -q "${tmpZip}" -d "${tmpDir}"`, { timeout: 30_000, encoding: "utf8" });
+        fs.rmSync(tmpZip);
+
+        const entries = fs.readdirSync(tmpDir);
+        const sourceDir = path.join(tmpDir, entries[0]);
+
+        console.log("[update] Copying files...");
+        execSync(
+          `cd "${sourceDir}" && tar cf - --exclude='data' --exclude='node_modules' --exclude='.env' . | tar xf - -C "${cwd}"`,
+          { timeout: 30_000, encoding: "utf8" },
+        );
+
+        console.log("[update] Installing dependencies...");
+        execSync("npm install", { cwd, timeout: 120_000, stdio: "pipe", encoding: "utf8" });
+        execSync("npm install", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "pipe", encoding: "utf8" });
+
+        console.log("[update] Building frontend...");
+        execSync("npm run build", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "pipe", encoding: "utf8" });
+
+        fs.rmSync(tmpDir, { recursive: true });
+        updating = false;
+
+        console.log("[update] Update complete. Restarting...");
+        setTimeout(() => process.exit(0), 1000);
+      } catch (err) {
+        console.error("[update] Failed:", err.stderr || err.message);
+        try { fs.rmSync(tmpZip, { force: true }); } catch {}
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+        updating = false;
+      }
+    })();
   });
 
   app.get(

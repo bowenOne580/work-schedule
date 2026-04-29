@@ -67,6 +67,34 @@ export interface Recommendation {
   }
 }
 
+export interface ExportPayload {
+  version: string
+  exportedAt: string
+  data: {
+    tasks: Task[]
+    checkpoints: Checkpoint[]
+    categories: Category[]
+    statisticsCache: Record<string, unknown>
+  }
+}
+
+export interface SystemVersion {
+  version: string
+  latestVersion: string
+}
+
+export interface UpdateResponse {
+  message: string
+  status: string
+}
+
+export interface ImportResult {
+  imported: boolean
+  taskCount: number
+  checkpointCount: number
+  categoryCount: number
+}
+
 export interface ApiError {
   code: string
   message: string

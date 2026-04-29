@@ -4,6 +4,10 @@ set -e
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$ROOT_DIR/.dev.pid"
 
+cleanup_terminal() {
+  stty sane 2>/dev/null || true
+}
+
 if [ ! -f "$PID_FILE" ]; then
   echo "No PID file found at $PID_FILE"
   echo "Trying to find processes by port..."
@@ -20,11 +24,12 @@ if [ ! -f "$PID_FILE" ]; then
 
   if [ -n "$FRONTEND_PID" ]; then
     echo "Killing frontend (PID $FRONTEND_PID)..."
-    kill "$FRONTEND_PID" 2>/dev/null || true
+    kill -INT "$FRONTEND_PID" 2>/dev/null || true
   else
     echo "No frontend process found on port 5173."
   fi
 
+  cleanup_terminal
   exit 0
 fi
 
@@ -38,9 +43,14 @@ for i in $(seq $((${#pids[@]} - 1)) -1 0); do
   pid="${pids[$i]}"
   if kill -0 "$pid" 2>/dev/null; then
     echo "Stopping process (PID $pid)..."
-    kill "$pid" 2>/dev/null || true
+    if [ $i -eq $((${#pids[@]} - 1)) ]; then
+      kill -INT "$pid" 2>/dev/null || true
+    else
+      kill "$pid" 2>/dev/null || true
+    fi
   fi
 done
 
 rm -f "$PID_FILE"
+cleanup_terminal
 echo "All services stopped."

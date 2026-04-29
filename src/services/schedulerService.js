@@ -1,6 +1,8 @@
 const { randomUUID } = require("node:crypto");
+const path = require("node:path");
 const { AppError } = require("../errors");
 const { ACTION, ANOMALY_FLAGS, CATEGORY, TASK_STATUS } = require("../constants");
+const pkg = require(path.join(__dirname, "..", "..", "package.json"));
 
 function nowIso() {
   return new Date().toISOString();
@@ -601,6 +603,76 @@ class SchedulerService {
         id: categoryId,
         deleted: true,
         reassignedTaskCount,
+      };
+    });
+  }
+
+  async exportAllData() {
+    return this.storage.runExclusive((state) => {
+      return {
+        version: pkg.version,
+        exportedAt: new Date().toISOString(),
+        data: {
+          tasks: state.tasks,
+          checkpoints: state.checkpoints,
+          categories: state.categories,
+          statisticsCache: state.statisticsCache,
+        },
+      };
+    });
+  }
+
+  async importData(payload) {
+    return this.storage.runExclusive((state, tx) => {
+      if (!payload || typeof payload !== 'object' || !payload.version) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "无效的导入文件格式");
+      }
+      const { data } = payload;
+      if (!data || typeof data !== 'object') {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "缺少 data 字段");
+      }
+      if (!Array.isArray(data.tasks)) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "tasks 必须为数组");
+      }
+      if (!Array.isArray(data.checkpoints)) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "checkpoints 必须为数组");
+      }
+      if (!Array.isArray(data.categories)) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "categories 必须为数组");
+      }
+      if (!data.statisticsCache || typeof data.statisticsCache !== 'object') {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "statisticsCache 格式无效");
+      }
+
+      for (const task of data.tasks) {
+        if (!task.id) {
+          throw new AppError(400, "INVALID_IMPORT_DATA", "任务数据缺少 id");
+        }
+      }
+      for (const cp of data.checkpoints) {
+        if (!cp.id || !cp.taskId) {
+          throw new AppError(400, "INVALID_IMPORT_DATA", "检查点数据缺少 id 或 taskId");
+        }
+      }
+      for (const cat of data.categories) {
+        if (!cat.id) {
+          throw new AppError(400, "INVALID_IMPORT_DATA", "分类数据缺少 id");
+        }
+      }
+
+      state.tasks = data.tasks;
+      state.checkpoints = data.checkpoints;
+      state.categories = data.categories;
+      state.statisticsCache = data.statisticsCache;
+
+      this.#prepareState(state);
+      tx.commit();
+
+      return {
+        imported: true,
+        taskCount: data.tasks.length,
+        checkpointCount: data.checkpoints.length,
+        categoryCount: data.categories.length,
       };
     });
   }

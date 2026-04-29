@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Task, Checkpoint, Category, StatisticsOverview, Recommendation } from '../types'
+import type { Task, Checkpoint, Category, StatisticsOverview, Recommendation, ExportPayload, SystemVersion, UpdateResponse, ImportResult } from '../types'
 
 export const authApi = {
   status: () => api.get<{ authenticated: boolean; username?: string }>('/api/auth/status'),
@@ -45,4 +45,11 @@ export const statsApi = {
 
 export const recommendApi = {
   byCategory: () => api.get<Recommendation[]>('/api/recommendations/by-category'),
+}
+
+export const systemApi = {
+  exportData: () => api.get<ExportPayload>('/api/system/export'),
+  importData: (body: ExportPayload) => api.post<ImportResult>('/api/system/import', body),
+  version: () => api.get<SystemVersion>('/api/system/version'),
+  update: () => api.post<UpdateResponse>('/api/system/update'),
 }
