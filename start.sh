@@ -15,6 +15,8 @@ echo "$BACKEND_PID" > "$PID_FILE"
 
 echo "Starting frontend (port 5173)..."
 cd "$ROOT_DIR/frontend"
+# 如需通过自定义域名访问（配合 nginx 反代），设置 ALLOWED_HOSTS 环境变量：
+#   ALLOWED_HOSTS=todo.example.com VITE_API_BASE= npx vite --port 5173
 VITE_API_BASE= npx vite --port 5173 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" >> "$PID_FILE"

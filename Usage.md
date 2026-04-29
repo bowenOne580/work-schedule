@@ -84,7 +84,7 @@ npm run build
 
 构建产物在 `frontend/dist/` 目录。
 
-构建时可指定 API 地址。默认情况下前端请求 `http://localhost:8998`。如需修改：
+默认 API 地址为空（同源请求），适用于 Nginx 同域反代。如需修改：
 
 ```bash
 # 构建时指定 API 地址
@@ -142,7 +142,7 @@ Environment=WORK_SCHEDULE_CORS_ORIGINS=https://your-domain.com
 WantedBy=multi-user.target
 ```
 
-**注意**：如果使用 Nginx 同域反代（方案一），无需设置 `CORS_ORIGINS`。如果前后端不同源，需要正确配置此变量。
+**注意**：如果使用 Nginx 同域反代（方案一）、或使用 Vite proxy + Nginx 反代开发服务器（方案一 B），前后端同源，无需设置 `CORS_ORIGINS`。如果前后端不同源，需要正确配置此变量。
 
 ```bash
 sudo systemctl daemon-reload
@@ -195,6 +195,48 @@ server {
 ```
 
 **关键**：最后一行 `try_files $uri $uri/ /index.html` 确保 React 路由（如 `/app/tasks`）刷新时不会 404。
+
+### 方案一 B：Nginx 反代至 Vite 开发服务器
+
+开发或调试阶段，可将前端请求转发至 Vite 开发服务器（热更新支持）：
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # 后端 API 代理
+    location /api/ {
+        proxy_pass http://127.0.0.1:8998;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 前端 Vite 开发服务器代理
+    location / {
+        proxy_pass http://127.0.0.1:5173;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+使用此方案时，启动服务需指定 `ALLOWED_HOSTS` 环境变量（`start.sh` 已集成）：
+
+```bash
+ALLOWED_HOSTS=your-domain.com ./start.sh
+```
+
+多个域名用逗号分隔：
+
+```bash
+ALLOWED_HOSTS=your-domain.com,your-backup-domain.com ./start.sh
+```
 
 ### 方案二：同域部署（后端托管前端文件）
 
@@ -302,6 +344,8 @@ sudo systemctl restart work-schedule
 
 ## 12. 本地开发
 
+### 启动
+
 开发时使用 `start.sh` 脚本同时启动后端和前端开发服务器：
 
 ```bash
@@ -311,7 +355,18 @@ sudo systemctl restart work-schedule
 - 后端：`http://localhost:8998`
 - 前端：`http://localhost:5173`（支持热更新）
 
-停止开发环境：
+Vite 开发服务器已配置 proxy，将 `/api/` 请求自动转发到后端（8998 端口），前端 API 请求走同源路径，无需 CORS。配置见 [frontend/vite.config.ts](frontend/vite.config.ts)。
+
+### 环境变量说明
+
+| 变量 | 用途 | 示例 |
+|---|---|---|
+| `VITE_API_BASE` | 前端 API 基地址（默认空=同源） | `http://localhost:8998` |
+| `ALLOWED_HOSTS` | Vite 开发服务器允许的域名（逗号分隔） | `todo.example.com` |
+| `WORK_SCHEDULE_CORS_ORIGINS` | 后端允许的跨域来源 | `http://localhost:5173` |
+| `WORK_SCHEDULE_SERVE_STATIC` | 后端托管静态文件模式 | `true` |
+
+### 停止
 
 ```bash
 ./stop.sh
@@ -382,6 +437,7 @@ location / {
 
 - 确认后端的 `WORK_SCHEDULE_CORS_ORIGINS` 包含了前端实际访问地址
 - 使用同域部署（Nginx 反代 + 静态文件）可避免跨域问题
+- 本地开发时 Vite proxy 已将 `/api/` 转发至后端，不会产生跨域
 
 ### 数据丢失
 
@@ -420,3 +476,4 @@ journalctl -u work-schedule -n 100 --no-pager
 - [ ] 如使用域名，Nginx 配置正确
 - [ ] 如使用 HTTPS，证书配置正常
 - [ ] 已建立数据备份流程
+- [ ] 如使用 Vite 开发服务器 + Nginx 反代，已设置 `ALLOWED_HOSTS`

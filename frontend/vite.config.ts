@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    allowedHosts: ['todo.wbwone1.cn'],
+    allowedHosts: process.env.ALLOWED_HOSTS?.split(',').map(s => s.trim()) || undefined,
     proxy: {
       '/api': {
         target: 'http://localhost:8998',
