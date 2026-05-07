@@ -421,7 +421,7 @@ function createApp(service, options = {}) {
         send("installing", "正在安装依赖...");
         console.log("[update] Installing dependencies...");
         execSync("npm install", { cwd, timeout: 120_000, stdio: "inherit", encoding: "utf8" });
-        execSync("npm install", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "inherit", encoding: "utf8" });
+        execSync("npm install --include=dev", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "inherit", encoding: "utf8" });
 
         send("building", "正在构建前端...");
         console.log("[update] Building frontend...");
