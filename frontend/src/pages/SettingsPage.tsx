@@ -25,6 +25,7 @@ export default function SettingsPage() {
   const [versionInfo, setVersionInfo] = useState<{ version: string; latestVersion: string } | null>(null)
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'confirming' | 'updating' | 'done'>('idle')
   const [updateError, setUpdateError] = useState('')
+  const [updateMessage, setUpdateMessage] = useState('')
 
   const { data: categories = [], error: loadError } = useQuery('categories', categoriesApi.list)
 
@@ -120,9 +121,34 @@ export default function SettingsPage() {
   const handleUpdate = async () => {
     setUpdateStatus('updating')
     setUpdateError('')
+    setUpdateMessage('正在连接...')
+    const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8998'
     try {
-      await systemApi.update()
-      setUpdateStatus('done')
+      const res = await fetch(`${BASE}/api/system/update`, { method: 'POST', credentials: 'include' })
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue
+          const event = JSON.parse(line.slice(5).trim()) as { step: string; message: string }
+          if (event.step === 'error') {
+            setUpdateError(event.message)
+            setUpdateStatus('idle')
+            return
+          }
+          setUpdateMessage(event.message)
+          if (event.step === 'done') {
+            setUpdateStatus('done')
+          }
+        }
+      }
     } catch (err: unknown) {
       const msg = (err as { message?: string }).message || '更新失败'
       setUpdateError(msg)
@@ -363,7 +389,7 @@ export default function SettingsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl space-y-4 text-center">
             <RefreshCw size={24} className="mx-auto text-indigo-500 animate-spin" />
-            <p className="text-sm font-medium text-slate-700">正在下载更新...</p>
+            <p className="text-sm font-medium text-slate-700">{updateMessage}</p>
             <p className="text-xs text-slate-400">请勿关闭页面</p>
           </div>
         </div>

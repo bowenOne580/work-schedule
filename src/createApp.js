@@ -372,10 +372,17 @@ function createApp(service, options = {}) {
     const tmpZip = "/tmp/work-schedule-update.zip";
     const tmpDir = "/tmp/work-schedule-update";
 
-    res.json({ data: { message: "正在下载更新...", status: "downloading" } });
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const send = (step, message) => {
+      res.write(`data: ${JSON.stringify({ step, message })}\n\n`);
+    };
 
     (async () => {
       try {
+        send("downloading", "正在从 GitHub 下载更新...");
         console.log("[update] Downloading latest code from GitHub...");
         const response = await fetch("https://api.github.com/repos/bowenOne580/work-schedule/zipball/main", {
           signal: AbortSignal.timeout(60_000),
@@ -387,6 +394,7 @@ function createApp(service, options = {}) {
         fs.writeFileSync(tmpZip, buffer);
         console.log("[update] Download complete.");
 
+        send("extracting", "正在解压文件...");
         console.log("[update] Extracting zip...");
         if (fs.existsSync(tmpDir)) {
           fs.rmSync(tmpDir, { recursive: true });
@@ -398,29 +406,37 @@ function createApp(service, options = {}) {
         const entries = fs.readdirSync(tmpDir);
         const sourceDir = path.join(tmpDir, entries[0]);
 
+        send("copying", "正在替换文件...");
         console.log("[update] Copying files...");
         execSync(
           `cd "${sourceDir}" && tar cf - --exclude='data' --exclude='node_modules' --exclude='.env' . | tar xf - -C "${cwd}"`,
           { timeout: 30_000, encoding: "utf8" },
         );
 
+        send("installing", "正在安装依赖...");
         console.log("[update] Installing dependencies...");
         execSync("npm install", { cwd, timeout: 120_000, stdio: "inherit", encoding: "utf8" });
         execSync("npm install", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "inherit", encoding: "utf8" });
 
+        send("building", "正在构建前端...");
         console.log("[update] Building frontend...");
         execSync("npm run build", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "inherit", encoding: "utf8" });
 
+        send("cleanup", "正在清理临时文件...");
         fs.rmSync(tmpDir, { recursive: true });
         updating = false;
 
+        send("done", "更新完成，服务即将重启...");
         console.log("[update] Update complete. Restarting...");
+        res.end();
         setTimeout(() => process.exit(0), 1000);
       } catch (err) {
         console.error("[update] Failed:", err.stderr || err.message);
         try { fs.rmSync(tmpZip, { force: true }); } catch {}
         try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
         updating = false;
+        send("error", err.message || "更新失败");
+        res.end();
       }
     })();
   });
