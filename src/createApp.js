@@ -374,7 +374,7 @@ function createApp(service, options = {}) {
     const mirror = req.body?.mirror === true;
 
     const zipUrl = mirror
-      ? "https://mirror.ghproxy.com/https://github.com/bowenOne580/work-schedule/zipball/main"
+      ? "https://ghfast.top/https://github.com/bowenOne580/work-schedule/archive/main.zip"
       : "https://api.github.com/repos/bowenOne580/work-schedule/zipball/main";
 
     res.setHeader("Content-Type", "text/event-stream");
