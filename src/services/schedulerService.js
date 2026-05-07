@@ -521,7 +521,7 @@ class SchedulerService {
         tx.commit();
       }
 
-      return state.tasks.filter((task) => this.#isTaskAnomalous(task));
+      return state.tasks.filter((task) => this.#isTaskAnomalous(task) && !task.anomalyIgnored);
     });
   }
 
@@ -1026,8 +1026,15 @@ class SchedulerService {
       changed = true;
     }
 
-    const hasSkippedCheckpoint = related.some((cp) => cp.skipped);
-    changed = this.#setAnomalyFlag(task, ANOMALY_FLAGS.CHECKPOINT_SKIPPED, hasSkippedCheckpoint) || changed;
+    if (task.status === TASK_STATUS.DONE) {
+      if (task.anomalyFlags.length > 0) {
+        task.anomalyFlags = [];
+        changed = true;
+      }
+    } else {
+      const hasSkippedCheckpoint = related.some((cp) => cp.skipped);
+      changed = this.#setAnomalyFlag(task, ANOMALY_FLAGS.CHECKPOINT_SKIPPED, hasSkippedCheckpoint) || changed;
+    }
 
     if (!this.#isTaskAnomalous(task) && task.anomalyIgnored) {
       task.anomalyIgnored = false;
@@ -1116,26 +1123,24 @@ class SchedulerService {
     const onTimeRate = doneWithDeadline === 0 ? null : Number((onTimeCount / doneWithDeadline).toFixed(4));
     const avgOverdueRatio = overdueRatioCount === 0 ? null : Number((overdueRatioSum / overdueRatioCount).toFixed(4));
 
-    // Build/update daily history (last 7 days)
+    // Build daily history covering all of the last 7 days (fill missing days with 0)
     const todayKey = new Date().toISOString().slice(0, 10);
     const prevHistory = (prevCache && prevCache.dailyHistory) || [];
-    const withoutToday = prevHistory.filter(h => h.dateKey !== todayKey);
-    const updatedHistory = [...withoutToday, { dateKey: todayKey, minutes: dailyMinutes }];
-    let dailyHistory = updatedHistory.slice(-7);
+    const historyMap = {};
+    for (const h of prevHistory) {
+      historyMap[h.dateKey] = h.minutes;
+    }
+    historyMap[todayKey] = dailyMinutes;
 
-    // Seed initial history with deterministic fake data for the chart
-    if (!prevCache || !prevCache.dailyHistory || prevCache.dailyHistory.length === 0) {
-      const seed = [];
-      for (let i = 6; i >= 1; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const multiplier = 0.4 + (6 - i) * 0.1;
-        seed.push({
-          dateKey: d.toISOString().slice(0, 10),
-          minutes: Math.round((dailyMinutes || 120) * multiplier),
-        });
-      }
-      dailyHistory = [...seed, { dateKey: todayKey, minutes: dailyMinutes }];
+    const dailyHistory = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      dailyHistory.push({
+        dateKey: key,
+        minutes: historyMap[key] ?? 0,
+      });
     }
 
     return {
