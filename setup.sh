@@ -34,7 +34,11 @@ echo ""
 
 # 4. 设置用户名和密码
 cd "$ROOT_DIR"
-npm run auth:init
+if [ -f "$ROOT_DIR/auth.json" ]; then
+  echo "  auth.json 已存在，跳过凭据设置"
+else
+  npm run auth:init
+fi
 
 echo ""
 echo "========================================"
