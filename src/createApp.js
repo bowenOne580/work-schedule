@@ -371,6 +371,11 @@ function createApp(service, options = {}) {
     const cwd = path.join(__dirname, "..");
     const tmpZip = "/tmp/work-schedule-update.zip";
     const tmpDir = "/tmp/work-schedule-update";
+    const mirror = req.body?.mirror === true;
+
+    const zipUrl = mirror
+      ? "https://mirror.ghproxy.com/https://github.com/bowenOne580/work-schedule/zipball/main"
+      : "https://api.github.com/repos/bowenOne580/work-schedule/zipball/main";
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -382,9 +387,9 @@ function createApp(service, options = {}) {
 
     (async () => {
       try {
-        send("downloading", "正在从 GitHub 下载更新...");
+        send("downloading", `正在${mirror ? "通过镜像" : "从 GitHub"}下载更新...`);
         console.log("[update] Downloading latest code from GitHub...");
-        const response = await fetch("https://api.github.com/repos/bowenOne580/work-schedule/zipball/main", {
+        const response = await fetch(zipUrl, {
           signal: AbortSignal.timeout(60_000),
         });
         if (!response.ok) {

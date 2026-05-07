@@ -26,6 +26,7 @@ export default function SettingsPage() {
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'confirming' | 'updating' | 'done'>('idle')
   const [updateError, setUpdateError] = useState('')
   const [updateMessage, setUpdateMessage] = useState('')
+  const [useMirror, setUseMirror] = useState(false)
 
   const { data: categories = [], error: loadError } = useQuery('categories', categoriesApi.list)
 
@@ -124,7 +125,12 @@ export default function SettingsPage() {
     setUpdateMessage('正在连接...')
     const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8998'
     try {
-      const res = await fetch(`${BASE}/api/system/update`, { method: 'POST', credentials: 'include' })
+      const res = await fetch(`${BASE}/api/system/update`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mirror: useMirror }),
+      })
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -323,6 +329,17 @@ export default function SettingsPage() {
           )}
         </div>
 
+        <label className="flex items-center gap-2 mb-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={useMirror}
+            onChange={(e) => setUseMirror(e.target.checked)}
+            disabled={updateStatus !== 'idle'}
+            className="rounded border-slate-300 text-indigo-500 focus:ring-indigo-400"
+          />
+          <span className="text-xs text-slate-500">使用镜像下载（中国境内加速）</span>
+        </label>
+
         <div className="flex gap-2">
           <button
             onClick={handleCheckVersion}
@@ -360,7 +377,7 @@ export default function SettingsPage() {
             <h3 className="text-sm font-semibold text-slate-800">确认更新</h3>
             <p className="text-xs text-slate-500">将执行以下操作：</p>
             <ul className="text-xs text-slate-600 space-y-1 list-disc list-inside">
-              <li>从 GitHub 下载最新代码</li>
+              <li>{useMirror ? '通过镜像代理从 GitHub' : '从 GitHub'} 下载最新代码</li>
               <li>替换现有文件（保留数据）</li>
               <li>安装依赖并构建前端</li>
               <li>重启服务器（需进程管理器自动拉起）</li>
