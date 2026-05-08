@@ -1,6 +1,6 @@
 const path = require("node:path");
 const fs = require("node:fs");
-const { execSync } = require("node:child_process");
+const { execSync, spawn } = require("node:child_process");
 const express = require("express");
 const { AppError } = require("./errors");
 const { ACTION } = require("./constants");
@@ -385,6 +385,17 @@ function createApp(service, options = {}) {
       res.write(`data: ${JSON.stringify({ step, message })}\n\n`);
     };
 
+    // Run a command and stream each output line as an SSE log message
+    const runStreaming = (cmd, args, opts) => new Promise((resolve, reject) => {
+      const child = spawn(cmd, args, { ...opts, stdio: ["ignore", "pipe", "pipe"] });
+      const onLine = (line) => {
+        if (line.trim()) send("log", line);
+      };
+      child.stdout.on("data", (d) => d.toString().split("\n").forEach(onLine));
+      child.stderr.on("data", (d) => d.toString().split("\n").forEach(onLine));
+      child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`${cmd} exited with code ${code}`)));
+    });
+
     (async () => {
       try {
         send("downloading", `正在${mirror ? "通过镜像" : "从 GitHub"}下载更新...`);
@@ -418,14 +429,25 @@ function createApp(service, options = {}) {
           { timeout: 30_000, encoding: "utf8" },
         );
 
-        send("installing", "正在安装依赖...");
-        console.log("[update] Installing dependencies...");
-        execSync("npm install", { cwd, timeout: 120_000, stdio: "inherit", encoding: "utf8" });
-        execSync("npm install --include=dev", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "inherit", encoding: "utf8" });
+        // Check if the release zip already contains a pre-built frontend/dist
+        const hasDist = fs.existsSync(path.join(sourceDir, "frontend", "dist", "index.html"));
 
-        send("building", "正在构建前端...");
-        console.log("[update] Building frontend...");
-        execSync("npm run build", { cwd: path.join(cwd, "frontend"), timeout: 120_000, stdio: "inherit", encoding: "utf8" });
+        send("installing", "正在安装后端依赖...");
+        console.log("[update] Installing backend dependencies...");
+        await runStreaming("npm", ["install"], { cwd, timeout: 120_000 });
+
+        if (hasDist) {
+          send("installing", "Release 包含预构建前端，跳过 build 步骤");
+          console.log("[update] Pre-built dist found, skipping frontend build.");
+        } else {
+          send("installing", "正在安装前端依赖...");
+          console.log("[update] Installing frontend dependencies...");
+          await runStreaming("npm", ["install", "--include=dev"], { cwd: path.join(cwd, "frontend"), timeout: 120_000 });
+
+          send("building", "正在构建前端...");
+          console.log("[update] Building frontend...");
+          await runStreaming("npm", ["run", "build"], { cwd: path.join(cwd, "frontend"), timeout: 120_000 });
+        }
 
         send("cleanup", "正在清理临时文件...");
         fs.rmSync(tmpDir, { recursive: true });

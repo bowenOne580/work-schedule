@@ -1,8 +1,20 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, invalidate } from '../hooks/useApi'
 import { categoriesApi, systemApi } from '../api'
 import { Plus, Trash2, Lock, Download, Upload, RefreshCw, ExternalLink } from 'lucide-react'
 import type { ExportPayload } from '../types'
+
+function LogScroller({ lines }: { lines: string[] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
+  }, [lines])
+  return (
+    <div ref={ref} className="bg-slate-900 rounded-lg p-3 h-48 overflow-y-auto font-mono text-xs text-slate-300 space-y-0.5">
+      {lines.map((l, i) => <div key={i}>{l}</div>)}
+    </div>
+  )
+}
 
 const SYSTEM_CATS = ['cat-general', 'cat-anomaly', 'cat-archived']
 const SYSTEM_LABELS: Record<string, string> = {
@@ -26,6 +38,7 @@ export default function SettingsPage() {
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'confirming' | 'updating' | 'done'>('idle')
   const [updateError, setUpdateError] = useState('')
   const [updateMessage, setUpdateMessage] = useState('')
+  const [updateLog, setUpdateLog] = useState<string[]>([])
   const [useMirror, setUseMirror] = useState(false)
 
   const { data: categories = [], error: loadError } = useQuery('categories', categoriesApi.list)
@@ -123,6 +136,7 @@ export default function SettingsPage() {
     setUpdateStatus('updating')
     setUpdateError('')
     setUpdateMessage('正在连接...')
+    setUpdateLog([])
     const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8998'
     try {
       const res = await fetch(`${BASE}/api/system/update`, {
@@ -149,7 +163,11 @@ export default function SettingsPage() {
             setUpdateStatus('idle')
             return
           }
-          setUpdateMessage(event.message)
+          if (event.step === 'log') {
+            setUpdateLog((prev) => [...prev.slice(-199), event.message])
+          } else {
+            setUpdateMessage(event.message)
+          }
           if (event.step === 'done') {
             setUpdateStatus('done')
           }
@@ -404,10 +422,15 @@ export default function SettingsPage() {
       {/* Update progress */}
       {updateStatus === 'updating' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl space-y-4 text-center">
-            <RefreshCw size={24} className="mx-auto text-indigo-500 animate-spin" />
-            <p className="text-sm font-medium text-slate-700">{updateMessage}</p>
-            <p className="text-xs text-slate-400">请勿关闭页面</p>
+          <div className="bg-white rounded-xl p-6 max-w-lg w-full mx-4 shadow-xl space-y-3">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={16} className="text-indigo-500 animate-spin shrink-0" />
+              <p className="text-sm font-medium text-slate-700">{updateMessage}</p>
+            </div>
+            {updateLog.length > 0 && (
+              <LogScroller lines={updateLog} />
+            )}
+            <p className="text-xs text-slate-400 text-center">请勿关闭页面</p>
           </div>
         </div>
       )}
