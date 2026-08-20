@@ -1,9 +1,18 @@
+import { useState } from 'react'
 import { useQuery, useMutation, invalidate } from '../hooks/useApi'
 import { tasksApi, recommendApi, statsApi } from '../api'
 import { ProgressBar, StatusBadge } from '../components/ui'
+import { CompleteModal } from '../components/TaskDetail'
 import type { Task, Recommendation } from '../types'
 import { Play, Pause, CheckCircle, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+
+function invalidateWorkData() {
+  invalidate('tasks')
+  invalidate('stats')
+  invalidate('recommendations')
+  invalidate('anomalies')
+}
 
 function fmtMinutes(m: number) {
   if (m < 60) return `${m}m`
@@ -11,9 +20,12 @@ function fmtMinutes(m: number) {
 }
 
 function InProgressCard({ task, onNavigate }: { task: Task; onNavigate: (id: string) => void }) {
-  const refresh = () => { invalidate('tasks') }
-  const pause = useMutation(() => tasksApi.action(task.id, 'pause'), { onSuccess: refresh })
-  const complete = useMutation(() => tasksApi.action(task.id, 'complete'), { onSuccess: refresh })
+  const [showComplete, setShowComplete] = useState(false)
+  const pause = useMutation(() => tasksApi.action(task.id, 'pause'), { onSuccess: invalidateWorkData })
+  const complete = useMutation(
+    (minutes?: number) => tasksApi.action(task.id, 'complete', minutes !== undefined ? { actualMinutes: minutes } : undefined),
+    { onSuccess: () => { setShowComplete(false); invalidateWorkData() } }
+  )
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
@@ -37,7 +49,7 @@ function InProgressCard({ task, onNavigate }: { task: Task; onNavigate: (id: str
             <Pause size={13} /> 暂停
           </button>
           <button
-            onClick={() => complete.mutate(undefined)}
+            onClick={() => setShowComplete(true)}
             disabled={complete.pending}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors"
           >
@@ -52,6 +64,16 @@ function InProgressCard({ task, onNavigate }: { task: Task; onNavigate: (id: str
         <span>实际 {fmtMinutes(task.actualMinutes)}</span>
         <span>{Math.round(task.progress)}%</span>
       </div>
+
+      {showComplete && (
+        <CompleteModal
+          label={task.title}
+          estimatedMinutes={task.estimatedMinutes}
+          onConfirm={minutes => complete.mutate(minutes)}
+          onCancel={() => setShowComplete(false)}
+          pending={complete.pending}
+        />
+      )}
     </div>
   )
 }
@@ -60,7 +82,7 @@ function RecommendCard({ rec, onNavigate }: { rec: Recommendation; onNavigate: (
   const { task, category, score } = rec
   const start = useMutation(
     () => tasksApi.action(task.id, 'start'),
-    { onSuccess: () => { invalidate('tasks'); invalidate('recommendations') } }
+    { onSuccess: invalidateWorkData }
   )
 
   return (

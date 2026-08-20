@@ -77,6 +77,22 @@ function asyncRoute(handler) {
   };
 }
 
+async function fetchLatestTag() {
+  const response = await fetch("https://api.github.com/repos/bowenOne580/work-schedule/tags?per_page=1", {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub tags responded with ${response.status}`);
+  }
+
+  const tags = await response.json();
+  if (!Array.isArray(tags) || !tags[0]?.name) {
+    throw new Error("No release tags found");
+  }
+
+  return String(tags[0].name);
+}
+
 function createApp(service, options = {}) {
   const app = express();
   const authConfig = getAuthConfig();
@@ -373,10 +389,6 @@ function createApp(service, options = {}) {
     const tmpDir = "/tmp/work-schedule-update";
     const mirror = req.body?.mirror === true;
 
-    const zipUrl = mirror
-      ? "https://ghfast.top/https://github.com/bowenOne580/work-schedule/archive/main.zip"
-      : "https://api.github.com/repos/bowenOne580/work-schedule/zipball/main";
-
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -398,8 +410,15 @@ function createApp(service, options = {}) {
 
     (async () => {
       try {
-        send("downloading", `正在${mirror ? "通过镜像" : "从 GitHub"}下载更新...`);
-        console.log("[update] Downloading latest code from GitHub...");
+        send("downloading", "正在获取最新发布版本...");
+        const latestTag = await fetchLatestTag();
+        const encodedTag = encodeURIComponent(latestTag);
+        const zipUrl = mirror
+          ? `https://ghfast.top/https://github.com/bowenOne580/work-schedule/archive/refs/tags/${encodedTag}.zip`
+          : `https://api.github.com/repos/bowenOne580/work-schedule/zipball/${encodedTag}`;
+
+        send("downloading", `正在${mirror ? "通过镜像" : "从 GitHub"}下载 ${latestTag}...`);
+        console.log(`[update] Downloading ${latestTag} from GitHub...`);
         const response = await fetch(zipUrl, {
           signal: AbortSignal.timeout(60_000),
         });
@@ -491,34 +510,69 @@ function createApp(service, options = {}) {
 
   if (serveStatic) {
     const publicDir = path.join(__dirname, "..", "public");
-    app.use((req, res, next) => {
-      if (req.path === "/login.html" && req.authUser) {
-        return res.redirect("/index.html");
-      }
+    const frontendDistDir = path.join(__dirname, "..", "frontend", "dist");
+    const hasFrontendDist = fs.existsSync(path.join(frontendDistDir, "index.html"));
+    const publicLooksLikeViteDist =
+      fs.existsSync(path.join(publicDir, "index.html")) && fs.existsSync(path.join(publicDir, "assets"));
 
-      if (req.path === "/login.html" || req.path === "/styles.css" || req.path.startsWith("/js/")) {
+    if (hasFrontendDist || publicLooksLikeViteDist) {
+      const spaDir = hasFrontendDist ? frontendDistDir : publicDir;
+
+      app.use((req, res, next) => {
+        if (req.path === "/login" && req.authUser) {
+          return res.redirect("/app");
+        }
+
+        if (isPageRequest(req) && req.path !== "/login" && !req.authUser) {
+          const nextPath = encodeURIComponent(req.originalUrl || "/app");
+          return res.redirect(`/login?next=${nextPath}`);
+        }
+
         return next();
-      }
+      });
 
-      if (isPageRequest(req) && !req.authUser) {
-        const nextPath = encodeURIComponent(req.originalUrl || "/index.html");
-        return res.redirect(`/login.html?next=${nextPath}`);
-      }
+      app.use(express.static(spaDir));
 
-      return next();
-    });
-    app.use(express.static(publicDir));
+      app.get("*", (req, res, next) => {
+        if (req.path.startsWith("/api/")) {
+          return next(new AppError(404, "API_NOT_FOUND", "API route not found"));
+        }
+        if (!req.authUser && isPageRequest(req) && req.path !== "/login") {
+          const nextPath = encodeURIComponent(req.originalUrl || "/app");
+          return res.redirect(`/login?next=${nextPath}`);
+        }
+        return res.sendFile(path.join(spaDir, "index.html"));
+      });
+    } else {
+      app.use((req, res, next) => {
+        if (req.path === "/login.html" && req.authUser) {
+          return res.redirect("/index.html");
+        }
 
-    app.get("*", (req, res, next) => {
-      if (req.path.startsWith("/api/")) {
-        return next(new AppError(404, "API_NOT_FOUND", "API route not found"));
-      }
-      if (!req.authUser) {
-        const nextPath = encodeURIComponent(req.originalUrl || "/index.html");
-        return res.redirect(`/login.html?next=${nextPath}`);
-      }
-      return res.sendFile(path.join(publicDir, "index.html"));
-    });
+        if (req.path === "/login.html" || req.path === "/styles.css" || req.path.startsWith("/js/")) {
+          return next();
+        }
+
+        if (isPageRequest(req) && !req.authUser) {
+          const nextPath = encodeURIComponent(req.originalUrl || "/index.html");
+          return res.redirect(`/login.html?next=${nextPath}`);
+        }
+
+        return next();
+      });
+      app.use(express.static(publicDir));
+
+      app.get("*", (req, res, next) => {
+        if (req.path.startsWith("/api/")) {
+          return next(new AppError(404, "API_NOT_FOUND", "API route not found"));
+        }
+        if (!req.authUser) {
+          const nextPath = encodeURIComponent(req.originalUrl || "/index.html");
+          return res.redirect(`/login.html?next=${nextPath}`);
+        }
+        return res.sendFile(path.join(publicDir, "index.html"));
+      });
+    }
   } else {
     app.get("/", (_req, res) => {
       res.json({

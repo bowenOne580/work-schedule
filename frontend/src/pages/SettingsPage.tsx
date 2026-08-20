@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, invalidate } from '../hooks/useApi'
 import { categoriesApi, systemApi } from '../api'
+import { API_BASE } from '../api/client'
 import { Plus, Trash2, Lock, Download, Upload, RefreshCw, ExternalLink } from 'lucide-react'
 import type { ExportPayload } from '../types'
 
@@ -46,7 +47,15 @@ export default function SettingsPage() {
   const create = useMutation(
     () => categoriesApi.create({ name, description: desc }),
     {
-      onSuccess: () => { invalidate('categories'); setName(''); setDesc(''); setAdding(false); setMutationError('') },
+      onSuccess: () => {
+        invalidate('categories')
+        invalidate('stats')
+        invalidate('recommendations')
+        setName('')
+        setDesc('')
+        setAdding(false)
+        setMutationError('')
+      },
       onError: () => setMutationError('创建失败，请重试'),
     }
   )
@@ -54,7 +63,13 @@ export default function SettingsPage() {
   const remove = useMutation(
     (id: string) => categoriesApi.delete(id),
     {
-      onSuccess: () => { invalidate('categories'); setMutationError('') },
+      onSuccess: () => {
+        invalidate('categories')
+        invalidate('tasks')
+        invalidate('stats')
+        invalidate('recommendations')
+        setMutationError('')
+      },
       onError: () => setMutationError('删除失败，请重试'),
     }
   )
@@ -112,6 +127,9 @@ export default function SettingsPage() {
       invalidate('categories')
       invalidate('tasks')
       invalidate('checkpoints')
+      invalidate('stats')
+      invalidate('recommendations')
+      invalidate('anomalies')
       setImportPreview(null)
       setMutationError('')
       alert('导入成功！数据已恢复。')
@@ -137,9 +155,8 @@ export default function SettingsPage() {
     setUpdateError('')
     setUpdateMessage('正在连接...')
     setUpdateLog([])
-    const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8998'
     try {
-      const res = await fetch(`${BASE}/api/system/update`, {
+      const res = await fetch(`${API_BASE}/api/system/update`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

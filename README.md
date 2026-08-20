@@ -154,7 +154,7 @@ cd frontend && npm run dev
 | `WORK_SCHEDULE_COOKIE_SECURE` | 继承 auth.json | 是否强制 Secure Cookie |
 | `WORK_SCHEDULE_COOKIE_DOMAIN` | 空 | Cookie Domain |
 | `WORK_SCHEDULE_SERVE_STATIC` | `false` | 设为 `true` 可兼容旧静态页面 |
-| `VITE_API_BASE`（前端） | `http://localhost:8998` | API 地址，可在 `frontend/.env` 中设置 |
+| `VITE_API_BASE`（前端） | 空 | API 基地址；为空时走同源 `/api`，跨域部署时填写协议+域名+端口，不要附加 `/api` |
 
 ## API 概览
 

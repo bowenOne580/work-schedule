@@ -7,10 +7,12 @@ import TaskDetail from '../components/TaskDetail'
 
 const flagLabels: Record<AnomalyFlag, string> = {
   postponed: '已推迟',
+  overdue: '已逾期',
   checkpoint_skipped: '跳过检查点',
 }
 const flagStyles: Record<AnomalyFlag, string> = {
   postponed: 'bg-orange-100 text-orange-600',
+  overdue: 'bg-red-100 text-red-600',
   checkpoint_skipped: 'bg-yellow-100 text-yellow-600',
 }
 

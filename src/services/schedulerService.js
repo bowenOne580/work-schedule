@@ -8,6 +8,30 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function startOfLocalDay(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfLocalWeek(date = new Date()) {
+  const start = startOfLocalDay(date);
+  const day = start.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  return addDays(start, mondayOffset);
+}
+
 function toInt(value, fallback = 0) {
   const n = Number(value);
   if (Number.isFinite(n)) {
@@ -60,6 +84,10 @@ function toDeadlineTimestamp(deadline) {
 
 function isIncompleteStatus(status) {
   return [TASK_STATUS.TODO, TASK_STATUS.IN_PROGRESS, TASK_STATUS.PAUSED].includes(status);
+}
+
+function isRecommendationStatus(status) {
+  return status === TASK_STATUS.TODO;
 }
 
 function isPositiveFinite(value) {
@@ -256,6 +284,7 @@ class SchedulerService {
         if (payload.actualMinutes !== undefined) {
           task.directMinutes = toInt(payload.actualMinutes, 0);
         }
+        this.#completeRemainingCheckpoints(task, state.checkpoints, payload.actualMinutes);
       }
       task.updatedAt = nowIso();
 
@@ -424,7 +453,7 @@ class SchedulerService {
 
       const taskByCategory = new Map();
       for (const task of state.tasks) {
-        if (!isIncompleteStatus(task.status)) {
+        if (!isRecommendationStatus(task.status)) {
           continue;
         }
         if (this.#isPlanningExcludedCategory(task.categoryId)) {
@@ -451,7 +480,7 @@ class SchedulerService {
         const scored = tasks.map((task) => {
           const remainingEstimated = this.#remainingEstimatedMinutes(task, state.checkpoints);
           const estimated = isNonNegativeFinite(remainingEstimated) ? remainingEstimated : medianEffort;
-          const manualScore = this.#normalizePriority(task.manualPriority) / 5;
+          const manualScore = (6 - this.#normalizePriority(task.manualPriority)) / 5;
 
           const distance = dateDistanceDays(task.deadline);
           let deadlineScore = 0;
@@ -485,8 +514,8 @@ class SchedulerService {
             return da - db;
           }
 
-          if (b.task.manualPriority !== a.task.manualPriority) {
-            return b.task.manualPriority - a.task.manualPriority;
+          if (a.task.manualPriority !== b.task.manualPriority) {
+            return a.task.manualPriority - b.task.manualPriority;
           }
 
           return new Date(a.task.createdAt) - new Date(b.task.createdAt);
@@ -644,21 +673,7 @@ class SchedulerService {
         throw new AppError(400, "INVALID_IMPORT_DATA", "statisticsCache 格式无效");
       }
 
-      for (const task of data.tasks) {
-        if (!task.id) {
-          throw new AppError(400, "INVALID_IMPORT_DATA", "任务数据缺少 id");
-        }
-      }
-      for (const cp of data.checkpoints) {
-        if (!cp.id || !cp.taskId) {
-          throw new AppError(400, "INVALID_IMPORT_DATA", "检查点数据缺少 id 或 taskId");
-        }
-      }
-      for (const cat of data.categories) {
-        if (!cat.id) {
-          throw new AppError(400, "INVALID_IMPORT_DATA", "分类数据缺少 id");
-        }
-      }
+      this.#validateImportedData(data);
 
       state.tasks = data.tasks;
       state.checkpoints = data.checkpoints;
@@ -675,6 +690,75 @@ class SchedulerService {
         categoryCount: data.categories.length,
       };
     });
+  }
+
+  #validateImportedData(data) {
+    const taskIds = new Set();
+    for (const task of data.tasks) {
+      if (!task || typeof task !== "object" || !task.id) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "任务数据缺少 id");
+      }
+      if (taskIds.has(task.id)) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", `任务 id 重复: ${task.id}`);
+      }
+      taskIds.add(task.id);
+    }
+
+    const categoryIds = new Set();
+    for (const cat of data.categories) {
+      if (!cat || typeof cat !== "object" || !cat.id) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "分类数据缺少 id");
+      }
+      if (categoryIds.has(cat.id)) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", `分类 id 重复: ${cat.id}`);
+      }
+      categoryIds.add(cat.id);
+    }
+
+    const validCategoryIds = new Set([CATEGORY.GENERAL_ID, CATEGORY.ANOMALY_ID, CATEGORY.ARCHIVED_ID, ...categoryIds]);
+    for (const task of data.tasks) {
+      if (task.categoryId && !validCategoryIds.has(task.categoryId)) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", `任务引用了不存在的分类: ${task.categoryId}`);
+      }
+    }
+
+    const checkpointIds = new Set();
+    for (const cp of data.checkpoints) {
+      if (!cp || typeof cp !== "object" || !cp.id || !cp.taskId) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "检查点数据缺少 id 或 taskId");
+      }
+      if (checkpointIds.has(cp.id)) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", `检查点 id 重复: ${cp.id}`);
+      }
+      if (!taskIds.has(cp.taskId)) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", `检查点引用了不存在的任务: ${cp.taskId}`);
+      }
+      checkpointIds.add(cp.id);
+    }
+  }
+
+  #completeRemainingCheckpoints(task, checkpoints, actualMinutes) {
+    const related = checkpoints.filter((cp) => cp.taskId === task.id);
+    if (!related.length) {
+      return;
+    }
+
+    const completionTargets = related.filter((cp) => !cp.completed && !cp.skipped);
+    for (const checkpoint of completionTargets) {
+      checkpoint.completed = true;
+      checkpoint.skipped = false;
+    }
+
+    if (actualMinutes === undefined) {
+      return;
+    }
+
+    const totalActual = toInt(actualMinutes, 0);
+    const target = completionTargets[completionTargets.length - 1] || related[related.length - 1];
+    const otherActual = related
+      .filter((cp) => cp.id !== target.id)
+      .reduce((sum, cp) => sum + toInt(cp.actualMinutes, 0), 0);
+    target.actualMinutes = Math.max(0, totalActual - otherActual);
   }
 
   #prepareState(state) {
@@ -932,25 +1016,15 @@ class SchedulerService {
       }
 
       if (!task.deadline) {
+        changed = this.#setAnomalyFlag(task, ANOMALY_FLAGS.OVERDUE, false) || changed;
         continue;
       }
 
       const deadlineTs = toDeadlineTimestamp(task.deadline);
-      if (Number.isNaN(deadlineTs) || deadlineTs > now) {
-        continue;
-      }
+      const isOverdue = !Number.isNaN(deadlineTs) && deadlineTs <= now;
+      const flagChanged = this.#setAnomalyFlag(task, ANOMALY_FLAGS.OVERDUE, isOverdue);
 
-      const before = JSON.stringify({
-        anomalyFlags: task.anomalyFlags,
-      });
-
-      this.#appendAnomalyFlag(task, ANOMALY_FLAGS.POSTPONED);
-
-      const after = JSON.stringify({
-        anomalyFlags: task.anomalyFlags,
-      });
-
-      if (before !== after) {
+      if (flagChanged) {
         task.updatedAt = nowIso();
         changed = true;
       }
@@ -978,27 +1052,30 @@ class SchedulerService {
     }
 
     if (related.length > 0) {
-      const checkpointEstimated = related.reduce((sum, cp) => sum + toInt(cp.estimatedMinutes, 0), 0);
-      const completedEstimated = related
+      const activeCheckpoints = related.filter((cp) => !cp.skipped);
+      const checkpointEstimated = activeCheckpoints.reduce((sum, cp) => sum + toInt(cp.estimatedMinutes, 0), 0);
+      const completedEstimated = activeCheckpoints
         .filter((cp) => cp.completed)
         .reduce((sum, cp) => sum + toInt(cp.estimatedMinutes, 0), 0);
-      const nextEstimated = checkpointEstimated;
+      const nextEstimated = related.reduce((sum, cp) => sum + toInt(cp.estimatedMinutes, 0), 0);
       if (task.estimatedMinutes !== nextEstimated) {
         task.estimatedMinutes = nextEstimated;
         changed = true;
       }
 
       const nextProgress =
-        checkpointEstimated > 0
+        activeCheckpoints.length === 0
+          ? 100
+          : checkpointEstimated > 0
           ? clampProgress((completedEstimated / checkpointEstimated) * 100)
-          : clampProgress((related.filter((cp) => cp.completed).length / related.length) * 100);
+          : clampProgress((activeCheckpoints.filter((cp) => cp.completed).length / activeCheckpoints.length) * 100);
       if (task.progress !== nextProgress) {
         task.progress = nextProgress;
         changed = true;
       }
 
-      const allCheckpointsCompleted = related.every((cp) => cp.completed);
-      if (allCheckpointsCompleted && isIncompleteStatus(task.status)) {
+      const allCheckpointsResolved = related.every((cp) => cp.completed || cp.skipped);
+      if (allCheckpointsResolved && isIncompleteStatus(task.status)) {
         task.status = TASK_STATUS.DONE;
         task.progress = 100;
         task.anomalyFlags = [];
@@ -1045,9 +1122,11 @@ class SchedulerService {
   }
 
   #computeStatistics(tasks, categories, prevCache) {
-    const now = Date.now();
-    const oneDay = 24 * 60 * 60 * 1000;
-    const sevenDays = 7 * oneDay;
+    const now = new Date();
+    const todayStart = startOfLocalDay(now);
+    const tomorrowStart = addDays(todayStart, 1);
+    const weekStart = startOfLocalWeek(now);
+    const nextWeekStart = addDays(weekStart, 7);
 
     let dailyMinutes = 0;
     let weeklyMinutes = 0;
@@ -1064,6 +1143,7 @@ class SchedulerService {
     let onTimeCount = 0;
     let overdueRatioSum = 0;
     let overdueRatioCount = 0;
+    const historyMap = {};
 
     for (const task of tasks) {
       const actual = toInt(task.actualMinutes, 0);
@@ -1071,11 +1151,17 @@ class SchedulerService {
       const updatedAt = new Date(task.updatedAt).getTime();
 
       if (task.status === TASK_STATUS.DONE) {
-        const finishedAt = task.finishedAt ? new Date(task.finishedAt).getTime() : updatedAt;
-        if (Number.isFinite(finishedAt)) {
-          const diff = now - finishedAt;
-          if (diff <= oneDay) { dailyMinutes += actual; if (actual > 0) dailyDoneCount += 1; }
-          if (diff <= sevenDays) {
+        const finishedAt = task.finishedAt ? new Date(task.finishedAt) : new Date(updatedAt);
+        const finishedMs = finishedAt.getTime();
+        if (Number.isFinite(finishedMs)) {
+          const key = localDateKey(finishedAt);
+          historyMap[key] = (historyMap[key] || 0) + actual;
+
+          if (finishedAt >= todayStart && finishedAt < tomorrowStart) {
+            dailyMinutes += actual;
+            dailyDoneCount += 1;
+          }
+          if (finishedAt >= weekStart && finishedAt < nextWeekStart) {
             weeklyMinutes += actual;
             weeklyDoneCount += 1;
           }
@@ -1123,20 +1209,10 @@ class SchedulerService {
     const onTimeRate = doneWithDeadline === 0 ? null : Number((onTimeCount / doneWithDeadline).toFixed(4));
     const avgOverdueRatio = overdueRatioCount === 0 ? null : Number((overdueRatioSum / overdueRatioCount).toFixed(4));
 
-    // Build daily history covering all of the last 7 days (fill missing days with 0)
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const prevHistory = (prevCache && prevCache.dailyHistory) || [];
-    const historyMap = {};
-    for (const h of prevHistory) {
-      historyMap[h.dateKey] = h.minutes;
-    }
-    historyMap[todayKey] = dailyMinutes;
-
     const dailyHistory = [];
     for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const d = addDays(todayStart, -i);
+      const key = localDateKey(d);
       dailyHistory.push({
         dateKey: key,
         minutes: historyMap[key] ?? 0,
@@ -1144,7 +1220,7 @@ class SchedulerService {
     }
 
     return {
-      dateKey: todayKey,
+      dateKey: localDateKey(todayStart),
       dailyMinutes,
       weeklyMinutes,
       dailyDoneCount,

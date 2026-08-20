@@ -1,6 +1,6 @@
 export type TaskStatus = 'todo' | 'in_progress' | 'paused' | 'done'
 export type TaskAction = 'start' | 'pause' | 'resume' | 'complete' | 'postpone'
-export type AnomalyFlag = 'postponed' | 'checkpoint_skipped'
+export type AnomalyFlag = 'postponed' | 'overdue' | 'checkpoint_skipped'
 
 export interface Task {
   id: string

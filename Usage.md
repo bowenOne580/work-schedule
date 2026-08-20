@@ -84,17 +84,17 @@ npm run build
 
 构建产物在 `frontend/dist/` 目录。
 
-默认 API 地址为空（同源请求），适用于 Nginx 同域反代。如需修改：
+默认 API 地址为空（同源请求），适用于 Nginx 同域反代。如需修改，请填写 API 服务器的源地址，不要附加 `/api`：
 
 ```bash
 # 构建时指定 API 地址
-VITE_API_BASE=https://your-domain.com/api npm run build
+VITE_API_BASE=https://api.your-domain.com npm run build
 ```
 
 也可在 `frontend/.env` 文件中设置：
 
 ```
-VITE_API_BASE=https://your-domain.com/api
+VITE_API_BASE=https://api.your-domain.com
 ```
 
 ## 5. 配置后端
@@ -240,7 +240,7 @@ ALLOWED_HOSTS=your-domain.com,your-backup-domain.com ./start.sh
 
 ### 方案二：同域部署（后端托管前端文件）
 
-如果希望后端同时托管前端构建产物，把构建产物复制到 `public/` 目录，然后设置 `WORK_SCHEDULE_SERVE_STATIC=true`。
+如果希望后端同时托管前端构建产物，先执行 `cd frontend && npm run build`，然后设置 `WORK_SCHEDULE_SERVE_STATIC=true`。后端会优先托管 `frontend/dist/`；如果你把构建产物复制到 `public/`，也需要确保 `public/assets/` 和 `public/index.html` 同时存在。
 
 不过更推荐使用方案一（Nginx 托管静态文件），性能更好且配置灵活。
 
@@ -361,7 +361,7 @@ Vite 开发服务器已配置 proxy，将 `/api/` 请求自动转发到后端（
 
 | 变量 | 用途 | 示例 |
 |---|---|---|
-| `VITE_API_BASE` | 前端 API 基地址（默认空=同源） | `http://localhost:8998` |
+| `VITE_API_BASE` | 前端 API 基地址（默认空=同源，不附加 `/api`） | `http://localhost:8998` |
 | `ALLOWED_HOSTS` | Vite 开发服务器允许的域名（逗号分隔） | `todo.example.com` |
 | `WORK_SCHEDULE_CORS_ORIGINS` | 后端允许的跨域来源 | `http://localhost:5173` |
 | `WORK_SCHEDULE_SERVE_STATIC` | 后端托管静态文件模式 | `true` |

@@ -39,7 +39,7 @@ interface CompleteModalProps {
   pending: boolean
 }
 
-function CompleteModal({ label, estimatedMinutes, onConfirm, onCancel, pending }: CompleteModalProps) {
+export function CompleteModal({ label, estimatedMinutes, onConfirm, onCancel, pending }: CompleteModalProps) {
   const [val, setVal] = useState(estimatedMinutes ? String(estimatedMinutes) : '')
 
   return (
@@ -181,6 +181,9 @@ export default function TaskDetail({ taskId, onBack }: Props) {
   const refresh = () => {
     invalidatePrefix('task:')
     invalidate('tasks')
+    invalidate('stats')
+    invalidate('recommendations')
+    invalidate('anomalies')
   }
 
   const updateTask = useMutation(

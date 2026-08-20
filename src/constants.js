@@ -21,6 +21,7 @@ const CATEGORY = {
 
 const ANOMALY_FLAGS = {
   POSTPONED: "postponed",
+  OVERDUE: "overdue",
   CHECKPOINT_SKIPPED: "checkpoint_skipped",
 };
 
