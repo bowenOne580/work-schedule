@@ -78,9 +78,16 @@ function asyncRoute(handler) {
   };
 }
 
-async function fetchLatestTag() {
-  const response = await fetch("https://api.github.com/repos/bowenOne580/work-schedule/tags?per_page=1", {
-    signal: AbortSignal.timeout(10_000),
+const GH_REPO = "bowenOne580/work-schedule";
+
+function normalizeTag(version) {
+  const trimmed = String(version).trim();
+  return trimmed.startsWith("v") ? trimmed : `v${trimmed}`;
+}
+
+async function fetchLatestTagFromGitHubApi() {
+  const response = await fetch(`https://api.github.com/repos/${GH_REPO}/tags?per_page=1`, {
+    signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) {
     throw new Error(`GitHub tags responded with ${response.status}`);
@@ -92,6 +99,41 @@ async function fetchLatestTag() {
   }
 
   return String(tags[0].name);
+}
+
+// jsDelivr 的 GH 数据 API 国内可直接访问，versions 按语义化版本降序排列
+async function fetchLatestTagFromJsDelivr() {
+  const response = await fetch(`https://data.jsdelivr.com/v1/packages/gh/${GH_REPO}`, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) {
+    throw new Error(`jsDelivr responded with ${response.status}`);
+  }
+
+  const data = await response.json();
+  const version = Array.isArray(data?.versions) ? data.versions[0]?.version : null;
+  if (!version) {
+    throw new Error("No release tags found on jsDelivr");
+  }
+
+  return normalizeTag(version);
+}
+
+// 镜像模式优先走国内可达源；任一源失败自动降级到另一个
+async function fetchLatestTag({ mirror = false } = {}) {
+  const chain = mirror
+    ? [fetchLatestTagFromJsDelivr, fetchLatestTagFromGitHubApi]
+    : [fetchLatestTagFromGitHubApi, fetchLatestTagFromJsDelivr];
+
+  let lastError = null;
+  for (const source of chain) {
+    try {
+      return await source();
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError ?? new Error("Failed to fetch latest tag");
 }
 
 function createApp(service, options = {}) {
@@ -362,17 +404,11 @@ function createApp(service, options = {}) {
       }
 
       try {
-        const res = await fetch("https://api.github.com/repos/bowenOne580/work-schedule/tags?per_page=5", {
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (res.ok) {
-          const tags = await res.json();
-          if (Array.isArray(tags) && tags.length > 0) {
-            info.latestVersion = tags[0].name.replace(/^v/, "");
-          }
-        }
+        const mirror = String(req.query.mirror || "") === "1";
+        const tag = await fetchLatestTag({ mirror });
+        info.latestVersion = tag.replace(/^v/, "");
       } catch {
-        // GitHub API unreachable — silently ignore
+        // 版本源不可达 — 静默忽略
       }
 
       return info;
@@ -673,4 +709,5 @@ function createApp(service, options = {}) {
 
 module.exports = {
   createApp,
+  fetchLatestTag,
 };

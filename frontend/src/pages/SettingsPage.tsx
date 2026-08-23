@@ -149,7 +149,7 @@ export default function SettingsPage() {
 
   const handleCheckVersion = async () => {
     try {
-      const info = await systemApi.version()
+      const info = await systemApi.version(useMirror)
       setVersionInfo(info)
       setVersionChecked(true)
     } catch {
