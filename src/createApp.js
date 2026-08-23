@@ -136,6 +136,20 @@ async function fetchLatestTag({ mirror = false } = {}) {
   throw lastError ?? new Error("Failed to fetch latest tag");
 }
 
+// 更新包下载地址：assetUrl 指向 CI 预构建的 Release 附件（含 frontend/dist，更新时
+// 可跳过服务器端前端构建）；sourceUrl 为 GitHub 源码包（无 dist，需现场构建），
+// 用于 Release 无附件（v1.1.11 之前）或附件下载失败的回退。
+function buildUpdateZipUrls(tag, mirror) {
+  const encodedTag = encodeURIComponent(tag);
+  const ghPrefix = mirror ? "https://ghfast.top/https://github.com" : "https://github.com";
+  return {
+    assetUrl: `${ghPrefix}/${GH_REPO}/releases/download/${encodedTag}/work-schedule-${encodedTag}.zip`,
+    sourceUrl: mirror
+      ? `${ghPrefix}/${GH_REPO}/archive/refs/tags/${encodedTag}.zip`
+      : `https://api.github.com/repos/${GH_REPO}/zipball/${encodedTag}`,
+  };
+}
+
 function createApp(service, options = {}) {
   const app = express();
   const authConfig = getAuthConfig();
@@ -456,16 +470,20 @@ function createApp(service, options = {}) {
       try {
         send("downloading", "正在获取最新发布版本...");
         const latestTag = await fetchLatestTag({ mirror });
-        const encodedTag = encodeURIComponent(latestTag);
-        const zipUrl = mirror
-          ? `https://ghfast.top/https://github.com/bowenOne580/work-schedule/archive/refs/tags/${encodedTag}.zip`
-          : `https://api.github.com/repos/bowenOne580/work-schedule/zipball/${encodedTag}`;
+        const { assetUrl, sourceUrl } = buildUpdateZipUrls(latestTag, mirror);
 
-        send("downloading", `正在${mirror ? "通过镜像" : "从 GitHub"}下载 ${latestTag}...`);
-        console.log(`[update] Downloading ${latestTag} from GitHub...`);
-        const response = await fetch(zipUrl, {
+        send("downloading", `正在${mirror ? "通过镜像" : "从 GitHub"}下载 ${latestTag}（预构建包）...`);
+        console.log(`[update] Downloading ${latestTag} release asset...`);
+        let response = await fetch(assetUrl, {
           signal: AbortSignal.timeout(60_000),
         });
+        if (!response.ok) {
+          send("downloading", `预构建包不可用（${response.status}），改用源码包...`);
+          console.log(`[update] Release asset unavailable (${response.status}), falling back to source archive.`);
+          response = await fetch(sourceUrl, {
+            signal: AbortSignal.timeout(60_000),
+          });
+        }
         if (!response.ok) {
           throw new Error(`GitHub responded with ${response.status}`);
         }
@@ -710,4 +728,5 @@ function createApp(service, options = {}) {
 module.exports = {
   createApp,
   fetchLatestTag,
+  buildUpdateZipUrls,
 };

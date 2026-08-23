@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { JsonStorage } = require("../src/repository/jsonStorage");
 const { SchedulerService } = require("../src/services/schedulerService");
+const { buildUpdateZipUrls } = require("../src/createApp");
 
 async function createService() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "work-schedule-test-"));
@@ -90,12 +91,35 @@ async function testImportValidationRejectsOrphans() {
   );
 }
 
+function testUpdateZipUrls() {
+  const direct = buildUpdateZipUrls("v1.1.12", false);
+  assert.equal(
+    direct.assetUrl,
+    "https://github.com/bowenOne580/work-schedule/releases/download/v1.1.12/work-schedule-v1.1.12.zip",
+  );
+  assert.equal(
+    direct.sourceUrl,
+    "https://api.github.com/repos/bowenOne580/work-schedule/zipball/v1.1.12",
+  );
+
+  const mirror = buildUpdateZipUrls("v1.1.12", true);
+  assert.equal(
+    mirror.assetUrl,
+    "https://ghfast.top/https://github.com/bowenOne580/work-schedule/releases/download/v1.1.12/work-schedule-v1.1.12.zip",
+  );
+  assert.equal(
+    mirror.sourceUrl,
+    "https://ghfast.top/https://github.com/bowenOne580/work-schedule/archive/refs/tags/v1.1.12.zip",
+  );
+}
+
 async function main() {
   await testRecommendationPriorityAndStatus();
   await testCompleteTaskWithCheckpoints();
   await testSkippedCheckpointResolvesTask();
   await testZeroMinuteDoneCountsToday();
   await testImportValidationRejectsOrphans();
+  testUpdateZipUrls();
   console.log("Logic tests passed");
 }
 
