@@ -51,5 +51,6 @@ export const systemApi = {
   exportData: () => api.get<ExportPayload>('/api/system/export'),
   importData: (body: ExportPayload) => api.post<ImportResult>('/api/system/import', body),
   version: () => api.get<SystemVersion>('/api/system/version'),
+  versionQuick: () => api.get<SystemVersion>('/api/system/version?quick=1'),
   update: () => api.post<UpdateResponse>('/api/system/update'),
 }

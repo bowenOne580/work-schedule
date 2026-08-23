@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, invalidate } from '../hooks/useApi'
 import { categoriesApi, systemApi } from '../api'
 import { API_BASE } from '../api/client'
-import { Plus, Trash2, Lock, Download, Upload, RefreshCw, ExternalLink } from 'lucide-react'
+import { Plus, Trash2, Download, Upload, RefreshCw, ExternalLink } from 'lucide-react'
 import type { ExportPayload } from '../types'
 
 function LogScroller({ lines }: { lines: string[] }) {
@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const [importError, setImportError] = useState('')
 
   const [versionInfo, setVersionInfo] = useState<{ version: string; latestVersion: string } | null>(null)
+  const [versionChecked, setVersionChecked] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'confirming' | 'updating' | 'done'>('idle')
   const [updateError, setUpdateError] = useState('')
   const [updateMessage, setUpdateMessage] = useState('')
@@ -141,10 +142,15 @@ export default function SettingsPage() {
     }
   }
 
+  useEffect(() => {
+    systemApi.versionQuick().then(setVersionInfo).catch(() => {})
+  }, [])
+
   const handleCheckVersion = async () => {
     try {
       const info = await systemApi.version()
       setVersionInfo(info)
+      setVersionChecked(true)
     } catch {
       setUpdateError('获取版本信息失败')
     }
@@ -198,124 +204,125 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-800">分类管理</h1>
-        <button
-          onClick={() => setAdding(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-colors"
-        >
-          <Plus size={13} /> 新建分类
-        </button>
-      </div>
-
+    <div className="max-w-2xl mx-auto px-4 py-6 space-y-8">
       {(loadError || mutationError) && (
         <p className="text-sm text-red-500">{mutationError || '加载失败，请刷新重试'}</p>
       )}
 
-      {adding && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-medium text-slate-700">新建分类</h3>
-          <input
-            autoFocus
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="分类名称"
-            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-400"
-          />
-          <input
-            value={desc}
-            onChange={e => setDesc(e.target.value)}
-            placeholder="描述（可选）"
-            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-400"
-          />
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => { setAdding(false); setName(''); setDesc('') }} className="px-3 py-1.5 text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">取消</button>
-            <button
-              onClick={() => name.trim() && create.mutate(undefined)}
-              disabled={!name.trim() || create.pending}
-              className="px-3 py-1.5 text-xs text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg disabled:opacity-50"
-            >
-              创建
-            </button>
-          </div>
+      {/* 分类管理 */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-800">分类管理</h2>
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-colors"
+          >
+            <Plus size={13} /> 新建分类
+          </button>
         </div>
-      )}
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        {userCats.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-6">暂无自定义分类</p>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {userCats.map(c => (
-              <div key={c.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-800">{c.name}</p>
-                  {c.description && <p className="text-xs text-slate-400 mt-0.5">{c.description}</p>}
-                </div>
-                <button
-                  onClick={() => { if (confirm(`确认删除分类「${c.name}」？`)) remove.mutate(c.id) }}
-                  className="text-slate-300 hover:text-red-400 transition-colors"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            ))}
+        {adding && (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+            <h3 className="text-sm font-medium text-slate-700">新建分类</h3>
+            <input
+              autoFocus
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="分类名称"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-400"
+            />
+            <input
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+              placeholder="描述（可选）"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-400"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setAdding(false); setName(''); setDesc('') }} className="px-3 py-1.5 text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">取消</button>
+              <button
+                onClick={() => name.trim() && create.mutate(undefined)}
+                disabled={!name.trim() || create.pending}
+                className="px-3 py-1.5 text-xs text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg disabled:opacity-50"
+              >
+                创建
+              </button>
+            </div>
           </div>
         )}
-      </div>
 
-      <div>
-        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">系统分类（只读）</h2>
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <div className="divide-y divide-slate-100">
-            {sysCats.map(c => (
-              <div key={c.id} className="flex items-center gap-3 px-4 py-3">
-                <Lock size={13} className="text-slate-300 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-600">{SYSTEM_LABELS[c.id] ?? c.name}</p>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">{c.id}</p>
+          {sysCats.length + userCats.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">暂无分类</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {sysCats.map(c => (
+                <div key={c.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800">{SYSTEM_LABELS[c.id] ?? c.name}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">系统分类</p>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+              {userCats.map(c => (
+                <div key={c.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800">{c.name}</p>
+                    {c.description && <p className="text-xs text-slate-400 mt-0.5">{c.description}</p>}
+                  </div>
+                  <button
+                    onClick={() => { if (confirm(`确认删除分类「${c.name}」？`)) remove.mutate(c.id) }}
+                    className="text-slate-300 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
+      </section>
 
       <hr className="border-slate-200" />
 
-      {/* Export */}
-      <div>
-        <h2 className="text-sm font-semibold text-slate-700 mb-1">数据导出</h2>
-        <p className="text-xs text-slate-400 mb-3">将所有任务、检查点和分类数据导出为 JSON 文件</p>
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-colors disabled:opacity-50"
-        >
-          <Download size={13} /> {exporting ? '导出中...' : '导出数据'}
-        </button>
-      </div>
-
-      {/* Import */}
-      <div>
-        <h2 className="text-sm font-semibold text-slate-700 mb-1">数据导入</h2>
-        <p className="text-xs text-slate-400 mb-3">上传之前导出的 JSON 文件，将完全替换当前数据</p>
-        <input
-          type="file"
-          accept=".json"
-          onChange={handleImportFile}
-          className="hidden"
-          id="import-file-input"
-        />
-        <label
-          htmlFor="import-file-input"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg cursor-pointer transition-colors"
-        >
-          <Upload size={13} /> 选择文件导入
-        </label>
-        {importError && <p className="text-xs text-red-500 mt-2">{importError}</p>}
-      </div>
+      {/* 数据备份 */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-slate-800">数据备份</h2>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">数据导出</p>
+              <p className="text-xs text-slate-400 mt-1">将所有任务、检查点和分类数据导出为 JSON 文件</p>
+            </div>
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <Download size={13} /> {exporting ? '导出中...' : '导出数据'}
+            </button>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">数据导入</p>
+              <p className="text-xs text-slate-400 mt-1">上传之前导出的 JSON 文件，将完全替换当前数据</p>
+            </div>
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleImportFile}
+              className="hidden"
+              id="import-file-input"
+            />
+            <label
+              htmlFor="import-file-input"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg cursor-pointer transition-colors"
+            >
+              <Upload size={13} /> 选择文件导入
+            </label>
+            {importError && <p className="text-xs text-red-500">{importError}</p>}
+          </div>
+        </div>
+      </section>
 
       {/* Import confirmation dialog */}
       {importPreview && (
@@ -351,59 +358,71 @@ export default function SettingsPage() {
 
       <hr className="border-slate-200" />
 
-      {/* Update */}
-      <div>
-        <h2 className="text-sm font-semibold text-slate-700 mb-1">版本更新</h2>
-        <p className="text-xs text-slate-400 mb-3">从 GitHub 拉取最新代码并重启服务器</p>
-
-        <div className="flex items-center gap-2 mb-3">
+      {/* 关于 */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-slate-800">关于</h2>
+        <div className="space-y-3">
           {versionInfo && (
-            <span className="text-xs text-slate-500">
-              当前版本：v{versionInfo.version}{versionInfo.latestVersion ? `（最新版本：${versionInfo.latestVersion}）` : ''}
-            </span>
+            <p className="text-sm text-slate-600">
+              当前版本：v{versionInfo.version}
+              {versionChecked &&
+                (versionInfo.latestVersion
+                  ? `（最新版本：v${versionInfo.latestVersion}）`
+                  : '（未获取到最新版本）')}
+            </p>
           )}
-        </div>
+          <p className="text-xs text-slate-400">从 GitHub 拉取最新代码并重启服务器</p>
 
-        <label className="flex items-center gap-2 mb-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={useMirror}
-            onChange={(e) => setUseMirror(e.target.checked)}
-            disabled={updateStatus !== 'idle'}
-            className="rounded border-slate-300 text-indigo-500 focus:ring-indigo-400"
-          />
-          <span className="text-xs text-slate-500">使用镜像下载（中国境内加速）</span>
-        </label>
-
-        <div className="flex gap-2">
-          <button
-            onClick={handleCheckVersion}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-          >
-            <RefreshCw size={13} /> 检查版本
-          </button>
-
-          <a
-            href="https://github.com/bowenOne580/work-schedule/tags"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-          >
-            <ExternalLink size={13} /> 查看更新
-          </a>
-
-          {updateStatus === 'idle' && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setUpdateStatus('confirming')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors"
+              type="button"
+              role="switch"
+              aria-checked={useMirror}
+              onClick={() => setUseMirror(v => !v)}
+              disabled={updateStatus !== 'idle'}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                useMirror ? 'bg-indigo-500' : 'bg-slate-300'
+              }`}
             >
-              <RefreshCw size={13} /> 一键更新
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  useMirror ? 'translate-x-[18px]' : 'translate-x-0.5'
+                }`}
+              />
             </button>
-          )}
-        </div>
+            <span className="text-xs text-slate-500">使用镜像下载（中国境内加速）</span>
+          </div>
 
-        {updateError && <p className="text-xs text-red-500 mt-2">{updateError}</p>}
-      </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCheckVersion}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              <RefreshCw size={13} /> 检查更新
+            </button>
+
+            <a
+              href="https://github.com/bowenOne580/work-schedule/tags"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              <ExternalLink size={13} /> 查看更新
+            </a>
+
+            {updateStatus === 'idle' && (
+              <button
+                onClick={() => setUpdateStatus('confirming')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors"
+              >
+                <RefreshCw size={13} /> 一键更新
+              </button>
+            )}
+          </div>
+
+          {updateError && <p className="text-xs text-red-500">{updateError}</p>}
+        </div>
+      </section>
 
       {/* Update confirmation dialog */}
       {updateStatus === 'confirming' && (

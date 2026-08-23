@@ -352,9 +352,13 @@ function createApp(service, options = {}) {
 
   app.get(
     "/api/system/version",
-    asyncRoute(async () => {
+    asyncRoute(async (req) => {
       const pkg = require("../package.json");
       const info = { version: pkg.version.replace(/^v/, ""), latestVersion: "" };
+
+      if (String(req.query.quick || "") === "1") {
+        return info;
+      }
 
       try {
         const res = await fetch("https://api.github.com/repos/bowenOne580/work-schedule/tags?per_page=5", {
