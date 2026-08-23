@@ -5,7 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { JsonStorage } = require("../src/repository/jsonStorage");
 const { SchedulerService } = require("../src/services/schedulerService");
-const { buildUpdateZipUrls } = require("../src/createApp");
+const { buildUpdateZipUrls, resolveUpdateSourceDir } = require("../src/createApp");
 
 async function createService() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "work-schedule-test-"));
@@ -113,12 +113,32 @@ function testUpdateZipUrls() {
   );
 }
 
+async function testResolveUpdateSourceDir() {
+  const base = await fs.mkdtemp(path.join(os.tmpdir(), "ws-sourcedir-"));
+
+  // GitHub zipball：唯一包装目录 → 剥掉
+  const wrapped = path.join(base, "wrapped");
+  const wrapperName = "bowenOne580-work-schedule-abc123";
+  await fs.mkdir(path.join(wrapped, wrapperName, "src"), { recursive: true });
+  assert.equal(resolveUpdateSourceDir(wrapped), path.join(wrapped, wrapperName));
+
+  // CI Release 附件：扁平的项目根 → 直接使用解压根
+  const flat = path.join(base, "flat");
+  await fs.mkdir(path.join(flat, "src"), { recursive: true });
+  await fs.mkdir(path.join(flat, "frontend"), { recursive: true });
+  await fs.writeFile(path.join(flat, "server.js"), "");
+  assert.equal(resolveUpdateSourceDir(flat), flat);
+
+  await fs.rm(base, { recursive: true, force: true });
+}
+
 async function main() {
   await testRecommendationPriorityAndStatus();
   await testCompleteTaskWithCheckpoints();
   await testSkippedCheckpointResolvesTask();
   await testZeroMinuteDoneCountsToday();
   await testImportValidationRejectsOrphans();
+  await testResolveUpdateSourceDir();
   testUpdateZipUrls();
   console.log("Logic tests passed");
 }

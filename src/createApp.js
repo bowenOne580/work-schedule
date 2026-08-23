@@ -136,6 +136,19 @@ async function fetchLatestTag({ mirror = false } = {}) {
   throw lastError ?? new Error("Failed to fetch latest tag");
 }
 
+// 更新包解压后的源目录：GitHub 源码包（zipball/archive）带一层 <repo>-<sha>/ 包装目录，
+// CI 构建的 Release 附件则直接是项目根。仅当解压结果为唯一子目录时才剥掉包装层。
+function resolveUpdateSourceDir(tmpDir) {
+  const entries = fs.readdirSync(tmpDir);
+  if (entries.length === 1) {
+    const only = path.join(tmpDir, entries[0]);
+    if (fs.statSync(only).isDirectory()) {
+      return only;
+    }
+  }
+  return tmpDir;
+}
+
 // 更新包下载地址：assetUrl 指向 CI 预构建的 Release 附件（含 frontend/dist，更新时
 // 可跳过服务器端前端构建）；sourceUrl 为 GitHub 源码包（无 dist，需现场构建），
 // 用于 Release 无附件（v1.1.11 之前）或附件下载失败的回退。
@@ -500,8 +513,7 @@ function createApp(service, options = {}) {
         execSync(`unzip -q "${tmpZip}" -d "${tmpDir}"`, { timeout: 30_000, encoding: "utf8" });
         fs.rmSync(tmpZip);
 
-        const entries = fs.readdirSync(tmpDir);
-        const sourceDir = path.join(tmpDir, entries[0]);
+        const sourceDir = resolveUpdateSourceDir(tmpDir);
 
         send("snapshot", "正在备份当前版本...");
         console.log("[update] Creating snapshot...");
@@ -729,4 +741,5 @@ module.exports = {
   createApp,
   fetchLatestTag,
   buildUpdateZipUrls,
+  resolveUpdateSourceDir,
 };
