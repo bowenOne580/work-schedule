@@ -1,0 +1,22 @@
+# Work Schedule 生产环境 systemd 单元
+# 安装：
+#   sudo cp deploy/work-schedule.service /etc/systemd/system/work-schedule.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now work-schedule
+# 注意：
+#   - Restart=always 与一键更新配合：更新成功后进程主动 exit(0)，3 秒后自动拉起新版本
+#   - 运维停机请用 systemctl stop work-schedule（/api/system/stop 在 systemd 下等效于重启）
+[Unit]
+Description=Work Schedule (production)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/work-schedule
+ExecStart=/opt/work-schedule/deploy.sh
+Restart=always
+RestartSec=3
+Environment=PORT=8998
+
+[Install]
+WantedBy=multi-user.target

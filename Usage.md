@@ -84,6 +84,12 @@ npm run build
 
 构建产物在 `frontend/dist/` 目录。
 
+生产部署不要求在服务器上手动执行这一步，dist 有三个来源任选其一：
+
+1. **一键更新**（推荐）：release 包由 GitHub Actions 预构建 dist，更新流程直接使用，不在服务器上构建；
+2. **`./deploy.sh --build`**：首次手工部署时由启动脚本一次性构建；
+3. **手动执行**：即本节的 `npm run build`。
+
 默认 API 地址为空（同源请求），适用于 Nginx 同域反代。如需修改，请填写 API 服务器的源地址，不要附加 `/api`：
 
 ```bash
@@ -115,34 +121,23 @@ npm run auth:init
 
 生成的配置文件在 `config/auth.json`，权限自动设为 `600`。
 
-## 6. 使用 systemd 托管后端
+## 6. 使用 systemd 托管后端（生产）
 
-创建服务文件：
+生产环境统一使用项目自带的生产启动脚本 `deploy.sh`（负责环境变量、dist/auth 检查，并 `exec node server.js`）。不要用 `npm start` 或 `start.sh` 跑生产——它们面向本地开发（`npm start` 硬编码了 5173 的 CORS，`start.sh` 会启动 Vite 开发服务器）。
+
+安装服务（模板见 [deploy/work-schedule.service](deploy/work-schedule.service)）：
 
 ```bash
-sudo nano /etc/systemd/system/work-schedule.service
+sudo cp deploy/work-schedule.service /etc/systemd/system/work-schedule.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now work-schedule
 ```
 
-```ini
-[Unit]
-Description=Work Schedule Learning Planner
-After=network.target
+模板要点：
 
-[Service]
-Type=simple
-WorkingDirectory=/opt/work-schedule
-ExecStart=/usr/bin/npm start
-Restart=always
-RestartSec=3
-Environment=NODE_ENV=production
-Environment=PORT=8998
-Environment=WORK_SCHEDULE_CORS_ORIGINS=https://your-domain.com
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**注意**：如果使用 Nginx 同域反代（方案一）、或使用 Vite proxy + Nginx 反代开发服务器（方案一 B），前后端同源，无需设置 `CORS_ORIGINS`。如果前后端不同源，需要正确配置此变量。
+- `ExecStart=/opt/work-schedule/deploy.sh`（按实际部署路径修改）
+- `Restart=always` + `RestartSec=3`：与网页端一键更新配合——更新成功后进程主动退出，systemd 3 秒后自动拉起新版本，全程无需人工
+- 运维停机请使用 `sudo systemctl stop work-schedule`；接口 `POST /api/system/stop` 在 systemd 托管下等效于重启（`Restart=always` 会立即拉起）
 
 ```bash
 sudo systemctl daemon-reload
@@ -164,16 +159,23 @@ journalctl -u work-schedule -f
 
 ## 7. Nginx 配置
 
-### 方案一：同域部署（推荐）
+### 方案一：同域部署（生产推荐）
 
-前端构建产物 + API 反代都在同一个域名下：
+前端构建产物 + API 反代都在同一个域名下。生产模板见 [deploy/nginx-work-schedule.conf](deploy/nginx-work-schedule.conf)（含 gzip、`/assets/` 长缓存、SPA 回退）：
+
+```bash
+sudo cp deploy/nginx-work-schedule.conf /etc/nginx/sites-available/work-schedule
+sudo ln -sf /etc/nginx/sites-available/work-schedule /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+模板核心结构：
 
 ```nginx
 server {
     listen 80;
     server_name your-domain.com;
 
-    # 前端静态文件
     root /opt/work-schedule/frontend/dist;
     index index.html;
 
@@ -196,9 +198,9 @@ server {
 
 **关键**：最后一行 `try_files $uri $uri/ /index.html` 确保 React 路由（如 `/app/tasks`）刷新时不会 404。
 
-### 方案一 B：Nginx 反代至 Vite 开发服务器
+### 方案一 B：Nginx 反代至 Vite 开发服务器（仅开发调试）
 
-开发或调试阶段，可将前端请求转发至 Vite 开发服务器（热更新支持）：
+> **不要用于生产**：Vite 开发服务器按需转换源码模块，页面会发出几十个模块请求，公网高延迟下加载极慢（见 `doc/dev/2026-08-23/production-deploy-plan.md`）。生产请使用方案一。项目根目录的 [nginx.conf](nginx.conf) 即本方案的开发配置。
 
 ```nginx
 server {
@@ -324,6 +326,10 @@ tar -czf "backup-$(date +%F-%H%M%S).tar.gz" data config/auth.json
 ```
 
 ## 11. 升级部署
+
+方式一：网页端一键更新（推荐）。在设置页触发，流程完成后服务自动退出，由 systemd（`Restart=always`）3 秒内拉起新版本，无需登录服务器操作。更新失败会自动回滚到原版本。
+
+方式二：手动升级：
 
 ```bash
 cd /opt/work-schedule
