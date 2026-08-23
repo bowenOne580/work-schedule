@@ -15,6 +15,7 @@ const {
   verifyAuthToken,
   verifyPassword,
 } = require("./auth");
+const { writeUpdateState, createSnapshot, restoreSnapshot } = require("./updateGuard");
 
 function parseCookies(header) {
   if (!header) {
@@ -397,8 +398,8 @@ function createApp(service, options = {}) {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
-    const send = (step, message) => {
-      res.write(`data: ${JSON.stringify({ step, message })}\n\n`);
+    const send = (step, message, extra = {}) => {
+      res.write(`data: ${JSON.stringify({ step, message, ...extra })}\n\n`);
     };
 
     // Run a command and stream each output line as an SSE log message
@@ -413,9 +414,12 @@ function createApp(service, options = {}) {
     });
 
     (async () => {
+      // 快照成功后非空；标记"已进入需回滚区间"，失败时据此决定是否回滚
+      let relBackup = "";
+      let stateBase = null;
       try {
         send("downloading", "正在获取最新发布版本...");
-        const latestTag = await fetchLatestTag();
+        const latestTag = await fetchLatestTag({ mirror });
         const encodedTag = encodeURIComponent(latestTag);
         const zipUrl = mirror
           ? `https://ghfast.top/https://github.com/bowenOne580/work-schedule/archive/refs/tags/${encodedTag}.zip`
@@ -445,6 +449,17 @@ function createApp(service, options = {}) {
         const entries = fs.readdirSync(tmpDir);
         const sourceDir = path.join(tmpDir, entries[0]);
 
+        send("snapshot", "正在备份当前版本...");
+        console.log("[update] Creating snapshot...");
+        relBackup = createSnapshot();
+        stateBase = {
+          startedAt: new Date().toISOString(),
+          fromVersion: require("../package.json").version,
+          toTag: latestTag,
+          backup: relBackup,
+        };
+        writeUpdateState({ ...stateBase, status: "updating" });
+
         send("copying", "正在替换文件...");
         console.log("[update] Copying files...");
         execSync(
@@ -457,7 +472,7 @@ function createApp(service, options = {}) {
 
         send("installing", "正在安装后端依赖...");
         console.log("[update] Installing backend dependencies...");
-        await runStreaming("npm", ["install"], { cwd, timeout: 120_000 });
+        await runStreaming("npm", ["install"], { cwd, timeout: 300_000 });
 
         if (hasDist) {
           send("installing", "Release 包含预构建前端，跳过 build 步骤");
@@ -465,15 +480,24 @@ function createApp(service, options = {}) {
         } else {
           send("installing", "正在安装前端依赖...");
           console.log("[update] Installing frontend dependencies...");
-          await runStreaming("npm", ["install", "--include=dev"], { cwd: path.join(cwd, "frontend"), timeout: 120_000 });
+          await runStreaming("npm", ["install", "--include=dev"], { cwd: path.join(cwd, "frontend"), timeout: 300_000 });
 
           send("building", "正在构建前端...");
           console.log("[update] Building frontend...");
-          await runStreaming("npm", ["run", "build"], { cwd: path.join(cwd, "frontend"), timeout: 120_000 });
+          await runStreaming("npm", ["run", "build"], { cwd: path.join(cwd, "frontend"), timeout: 300_000 });
         }
+
+        send("verifying", "正在验证新版本...");
+        console.log("[update] Verifying...");
+        await runStreaming("node", ["scripts/verifyBoot.js"], { cwd, timeout: 60_000 });
 
         send("cleanup", "正在清理临时文件...");
         fs.rmSync(tmpDir, { recursive: true });
+        writeUpdateState({
+          ...stateBase,
+          status: "success",
+          finishedAt: new Date().toISOString(),
+        });
         updating = false;
 
         send("done", "更新完成，服务即将重启...");
@@ -484,8 +508,37 @@ function createApp(service, options = {}) {
         console.error("[update] Failed:", err.stderr || err.message);
         try { fs.rmSync(tmpZip, { force: true }); } catch {}
         try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-        updating = false;
-        send("error", err.message || "更新失败");
+
+        const reason = err.message || "更新失败";
+        try {
+          if (relBackup && stateBase) {
+            send("rollback", "更新失败，正在回滚到原版本...");
+            console.log("[update] Rolling back...");
+            restoreSnapshot(relBackup);
+
+            send("rollback", "正在恢复依赖...");
+            await runStreaming("npm", ["install"], { cwd, timeout: 300_000 });
+
+            writeUpdateState({
+              ...stateBase,
+              status: "rolled_back",
+              error: reason,
+              finishedAt: new Date().toISOString(),
+            });
+            send("error", `更新失败，已恢复到原版本：${reason}`, { rolledBack: true });
+          } else {
+            send("error", reason);
+          }
+        } catch (rollbackErr) {
+          // 状态保持 updating，下次重启由启动自愈重试恢复
+          console.error("[update] Rollback failed:", rollbackErr.message);
+          send(
+            "error",
+            `更新失败且回滚未完成，重启后将自动重试恢复。原因：${reason}；回滚错误：${rollbackErr.message}`,
+          );
+        } finally {
+          updating = false;
+        }
         res.end();
       }
     })();

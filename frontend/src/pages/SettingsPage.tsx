@@ -39,6 +39,7 @@ export default function SettingsPage() {
   const [versionChecked, setVersionChecked] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'confirming' | 'updating' | 'done'>('idle')
   const [updateError, setUpdateError] = useState('')
+  const [rollbackNotice, setRollbackNotice] = useState('')
   const [updateMessage, setUpdateMessage] = useState('')
   const [updateLog, setUpdateLog] = useState<string[]>([])
   const [useMirror, setUseMirror] = useState(false)
@@ -159,6 +160,7 @@ export default function SettingsPage() {
   const handleUpdate = async () => {
     setUpdateStatus('updating')
     setUpdateError('')
+    setRollbackNotice('')
     setUpdateMessage('正在连接...')
     setUpdateLog([])
     try {
@@ -180,9 +182,13 @@ export default function SettingsPage() {
         buf = lines.pop() ?? ''
         for (const line of lines) {
           if (!line.startsWith('data:')) continue
-          const event = JSON.parse(line.slice(5).trim()) as { step: string; message: string }
+          const event = JSON.parse(line.slice(5).trim()) as { step: string; message: string; rolledBack?: boolean }
           if (event.step === 'error') {
-            setUpdateError(event.message)
+            if (event.rolledBack) {
+              setRollbackNotice(event.message)
+            } else {
+              setUpdateError(event.message)
+            }
             setUpdateStatus('idle')
             return
           }
@@ -421,6 +427,7 @@ export default function SettingsPage() {
           </div>
 
           {updateError && <p className="text-xs text-red-500">{updateError}</p>}
+          {rollbackNotice && <p className="text-xs text-emerald-600">{rollbackNotice}</p>}
         </div>
       </section>
 
@@ -437,6 +444,7 @@ export default function SettingsPage() {
               <li>重启服务器（需进程管理器自动拉起）</li>
             </ul>
             <p className="text-xs text-amber-600 font-medium">更新期间服务将暂时不可用</p>
+            <p className="text-xs text-emerald-600">如更新失败，将自动回滚到当前版本</p>
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setUpdateStatus('idle')}

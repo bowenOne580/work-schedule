@@ -1,7 +1,7 @@
 const path = require("node:path");
-const { createApp } = require("./src/createApp");
-const { JsonStorage } = require("./src/repository/jsonStorage");
-const { SchedulerService } = require("./src/services/schedulerService");
+// 注意：其余模块必须在 main() 中、recoverInterruptedUpdate() 之后加载，
+// 否则上次更新损坏的模块会先被 require 缓存，自愈恢复磁盘也来不及
+const { recoverInterruptedUpdate } = require("./src/updateGuard");
 
 function parseBoolean(value, fallback = false) {
   if (value == null || value === "") {
@@ -27,6 +27,13 @@ function parseList(value) {
 }
 
 async function main() {
+  // 必须在加载其余模块、初始化存储之前执行：若上次更新中途进程死亡，先回滚代码再启动
+  recoverInterruptedUpdate();
+
+  const { createApp } = require("./src/createApp");
+  const { JsonStorage } = require("./src/repository/jsonStorage");
+  const { SchedulerService } = require("./src/services/schedulerService");
+
   const dataDir = path.join(__dirname, "data");
   const storage = new JsonStorage(dataDir, { backupCount: 5 });
   await storage.initialize();
