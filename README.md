@@ -200,6 +200,10 @@ cd frontend && npm run dev
 - `data/statistics_cache.json`
 - `data/backups/`
 
+## 开发方案文档
+
+自 2026-08 起，所有开发方案/计划统一存放于 `doc/dev/` 目录，命名格式为 `doc/dev/<方案创建日期 YYYY-MM-DD>/<主题>-plan.md`，例如 `doc/dev/2026-08-23/update-rollback-plan.md`。根目录下的 `Plan.md`、`review.md` 等为历史存档，不再更新。
+
 ## 部署
 
 详细部署指南请参阅 [Usage.md](./Usage.md)。
