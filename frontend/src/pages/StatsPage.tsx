@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '../hooks/useApi'
 import { statsApi, categoriesApi, type StatRange } from '../api'
 import {
@@ -99,21 +99,22 @@ function aggregateTrend(history: { dateKey: string; minutes: number }[]): {
 const TREND_SCROLL_THRESHOLD = 7
 const CATEGORY_SCROLL_THRESHOLD = 5
 
-// 测量滚动视口宽度，用于按视口/阈值计算列宽
+// 测量滚动视口宽度，用于按视口/阈值计算列宽。
+// 用 callback ref 存节点：图表 div 在数据加载后才挂载（冷加载时组件先渲染 spinner），
+// 若在挂载时用空依赖 effect 读 ref.current 会拿到 null、永远测不到宽度。
 function useElementWidth<T extends HTMLElement>() {
-  const ref = useRef<T | null>(null)
+  const [node, setNode] = useState<T | null>(null)
   const [width, setWidth] = useState(0)
   useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    setWidth(el.clientWidth)
+    if (!node) return
+    setWidth(node.clientWidth)
     const observer = new ResizeObserver(entries => {
       for (const entry of entries) setWidth(entry.contentRect.width)
     })
-    observer.observe(el)
+    observer.observe(node)
     return () => observer.disconnect()
-  }, [])
-  return [ref, width] as const
+  }, [node])
+  return [setNode, width] as const
 }
 
 export default function StatsPage() {
