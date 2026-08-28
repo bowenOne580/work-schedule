@@ -35,3 +35,14 @@
   .priority-bar-4 { background-color: #3B82F6; }
   .priority-bar-5 { background-color: #94A3B8; }
 }
+
+/* 不放入 @layer：这些类名由 Recharts 运行时生成，
+   会被 Tailwind 的 content 扫描 tree-shake 掉。
+   Recharts 3 会给柱子/扇区等交互元素加 tabindex，
+   点击后内部元素也会获得焦点，因此覆盖所有后代 */
+.recharts-wrapper:focus,
+.recharts-wrapper :focus,
+.recharts-surface:focus,
+.recharts-surface :focus {
+  outline: none;
+}
