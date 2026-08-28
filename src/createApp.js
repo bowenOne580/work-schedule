@@ -136,6 +136,37 @@ async function fetchLatestTag({ mirror = false } = {}) {
   throw lastError ?? new Error("Failed to fetch latest tag");
 }
 
+const STAT_RANGES = ["week", "month", "all", "custom"];
+const STAT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// 解析统计范围查询参数；无 range 参数返回 null（沿用持久化快照的默认口径，仪表盘/旧调用零影响）
+function parseStatRangeQuery(query) {
+  const type = query.range == null || query.range === "" ? null : String(query.range);
+  if (type === null) {
+    return null;
+  }
+  if (!STAT_RANGES.includes(type)) {
+    throw new AppError(400, "INVALID_STAT_RANGE", "未知的统计范围");
+  }
+  if (type !== "custom") {
+    return { type, from: null, to: null };
+  }
+  const from = String(query.from || "");
+  const to = String(query.to || "");
+  if (
+    !STAT_DATE_RE.test(from) ||
+    !STAT_DATE_RE.test(to) ||
+    Number.isNaN(new Date(`${from}T00:00:00`).getTime()) ||
+    Number.isNaN(new Date(`${to}T00:00:00`).getTime())
+  ) {
+    throw new AppError(400, "INVALID_STAT_RANGE", "自定义统计范围需要有效的起止日期（YYYY-MM-DD）");
+  }
+  if (from > to) {
+    throw new AppError(400, "INVALID_STAT_RANGE", "统计范围起始日期不能晚于结束日期");
+  }
+  return { type, from, to };
+}
+
 // 更新包解压后的源目录：GitHub 源码包（zipball/archive）带一层 <repo>-<sha>/ 包装目录，
 // CI 构建的 Release 附件则直接是项目根。仅当解压结果为唯一子目录时才剥掉包装层。
 function resolveUpdateSourceDir(tmpDir) {
@@ -393,8 +424,8 @@ function createApp(service, options = {}) {
 
   app.get(
     "/api/statistics/overview",
-    asyncRoute(async () => {
-      return service.getStatisticsOverview();
+    asyncRoute(async (req) => {
+      return service.getStatisticsOverview(parseStatRangeQuery(req.query));
     }),
   );
 
@@ -742,4 +773,5 @@ module.exports = {
   fetchLatestTag,
   buildUpdateZipUrls,
   resolveUpdateSourceDir,
+  parseStatRangeQuery,
 };

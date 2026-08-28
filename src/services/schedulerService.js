@@ -533,13 +533,18 @@ class SchedulerService {
     });
   }
 
-  async getStatisticsOverview() {
+  async getStatisticsOverview(range = null) {
     return this.storage.runExclusive((state, tx) => {
       const changed = this.#prepareState(state);
       if (changed) {
         tx.commit();
       }
-      return state.statisticsCache;
+      // 无范围：返回持久化快照（默认口径，仪表盘与统计页初始视图共用）
+      if (!range) {
+        return state.statisticsCache;
+      }
+      // 带范围：单遍历现场计算，不写回快照
+      return this.#computeRangedStatistics(state.tasks, state.categories, range);
     });
   }
 
@@ -1228,6 +1233,146 @@ class SchedulerService {
       completionRate,
       onTimeRate,
       avgOverdueRatio,
+      categoryTimeShare,
+      doneByPriority,
+      dailyHistory,
+    };
+  }
+
+  // 统计范围窗口解析：返回 [start, endExclusive) 半开区间；start=null 表示不限（全部）。
+  // 自定义范围的结束日期若为未来，自动调整为今天（与前端 clamp 行为一致）。
+  #resolveStatRangeWindow(range) {
+    const todayStart = startOfLocalDay(new Date());
+    const tomorrowStart = addDays(todayStart, 1);
+
+    if (range.type === "week") {
+      return { type: range.type, start: addDays(todayStart, -6), endInclusive: todayStart, endExclusive: tomorrowStart };
+    }
+    if (range.type === "month") {
+      return { type: range.type, start: addDays(todayStart, -29), endInclusive: todayStart, endExclusive: tomorrowStart };
+    }
+    if (range.type === "all") {
+      return { type: range.type, start: null, endInclusive: todayStart, endExclusive: tomorrowStart };
+    }
+
+    const parseDay = (value) => {
+      const day = new Date(`${value}T00:00:00`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(day.getTime())) {
+        throw new AppError(400, "INVALID_STAT_RANGE", "统计范围日期格式无效");
+      }
+      return startOfLocalDay(day);
+    };
+    const start = parseDay(range.from);
+    let endInclusive = parseDay(range.to);
+    if (endInclusive > todayStart) {
+      endInclusive = todayStart;
+    }
+    if (start > endInclusive) {
+      throw new AppError(400, "INVALID_STAT_RANGE", "统计范围起始日期不能晚于结束日期");
+    }
+    return { type: range.type, start, endInclusive, endExclusive: addDays(endInclusive, 1) };
+  }
+
+  // 范围口径（见 doc/dev/2026-08-28/stats-range-filter-plan.md 第 4 节）：
+  // 用时/完成/准时率/超时比/分类对比/优先级分布/趋势 按"完成日"入组（创建时间不限）；
+  // 完成率按"创建日"入组（创建于范围内的任务）。默认快照口径（#computeStatistics）不受影响。
+  #computeRangedStatistics(tasks, categories, range) {
+    const window = this.#resolveStatRangeWindow(range);
+    const todayStart = startOfLocalDay(new Date());
+    const tomorrowStart = addDays(todayStart, 1);
+
+    let todayMinutes = 0;
+    let rangeMinutes = 0;
+    let rangeDoneCount = 0;
+    let createdTotal = 0;
+    let createdDone = 0;
+    let onTimeCount = 0;
+    let onTimeWithDeadline = 0;
+    let overdueRatioSum = 0;
+    let overdueRatioCount = 0;
+    let totalCategoryActual = 0;
+    let earliestFinish = null;
+    const categoryActual = {};
+    const categoryEstimated = {};
+    const doneByPriority = {};
+    const historyMap = {};
+
+    for (const task of tasks) {
+      const actual = toInt(task.actualMinutes, 0);
+      const estimated = toInt(task.estimatedMinutes, 0);
+
+      // 完成率分母/分子：创建于范围内
+      const createdAt = new Date(task.createdAt);
+      if (
+        Number.isFinite(createdAt.getTime()) &&
+        (!window.start || createdAt >= window.start) &&
+        createdAt < window.endExclusive
+      ) {
+        createdTotal += 1;
+        if (task.status === TASK_STATUS.DONE) {
+          createdDone += 1;
+        }
+      }
+
+      if (task.status !== TASK_STATUS.DONE) continue;
+      const finishedAt = task.finishedAt ? new Date(task.finishedAt) : new Date(task.updatedAt);
+      const finishedMs = finishedAt.getTime();
+      if (!Number.isFinite(finishedMs)) continue;
+      if (!earliestFinish || finishedAt < earliestFinish) earliestFinish = finishedAt;
+      if (finishedAt >= todayStart && finishedAt < tomorrowStart) todayMinutes += actual;
+      if (window.start && (finishedAt < window.start || finishedAt >= window.endExclusive)) continue;
+
+      rangeDoneCount += 1;
+      rangeMinutes += actual;
+      const dayKey = localDateKey(finishedAt);
+      historyMap[dayKey] = (historyMap[dayKey] || 0) + actual;
+      categoryActual[task.categoryId] = (categoryActual[task.categoryId] || 0) + actual;
+      categoryEstimated[task.categoryId] = (categoryEstimated[task.categoryId] || 0) + estimated;
+      totalCategoryActual += actual;
+      const priorityKey = String(this.#normalizePriority(task.manualPriority));
+      doneByPriority[priorityKey] = (doneByPriority[priorityKey] || 0) + 1;
+      if (task.deadline) {
+        const deadlineTs = new Date(`${task.deadline}T23:59:59`).getTime();
+        if (finishedMs <= deadlineTs) onTimeCount += 1;
+        onTimeWithDeadline += 1;
+      }
+      if (estimated > 0 && actual > 0) {
+        overdueRatioSum += (actual - estimated) / estimated;
+        overdueRatioCount += 1;
+      }
+    }
+
+    // 趋势覆盖 [trendStart, trendEnd)：全部时从最早完成任务日起；自定义过去区间止于其结束日
+    const trendStart = window.start ?? (earliestFinish ? startOfLocalDay(earliestFinish) : todayStart);
+    const trendEnd = window.endExclusive > tomorrowStart ? tomorrowStart : window.endExclusive;
+    const dailyHistory = [];
+    for (let day = trendStart; day < trendEnd; day = addDays(day, 1)) {
+      const key = localDateKey(day);
+      dailyHistory.push({ dateKey: key, minutes: historyMap[key] ?? 0 });
+    }
+
+    const categoryTimeShare = {};
+    for (const category of categories) {
+      const actual = categoryActual[category.id] || 0;
+      const estimated = categoryEstimated[category.id] || 0;
+      categoryTimeShare[category.id] = {
+        actual,
+        estimated,
+        share: totalCategoryActual === 0 ? 0 : Number((actual / totalCategoryActual).toFixed(4)),
+      };
+    }
+
+    return {
+      dateKey: localDateKey(todayStart),
+      dailyMinutes: todayMinutes,
+      range: window.type,
+      rangeStart: localDateKey(trendStart),
+      rangeEnd: localDateKey(window.endInclusive),
+      rangeMinutes,
+      rangeDoneCount,
+      completionRate: createdTotal === 0 ? 0 : Number((createdDone / createdTotal).toFixed(4)),
+      onTimeRate: onTimeWithDeadline === 0 ? null : Number((onTimeCount / onTimeWithDeadline).toFixed(4)),
+      avgOverdueRatio: overdueRatioCount === 0 ? null : Number((overdueRatioSum / overdueRatioCount).toFixed(4)),
       categoryTimeShare,
       doneByPriority,
       dailyHistory,

@@ -39,8 +39,17 @@ export const categoriesApi = {
   delete: (id: string) => api.delete(`/api/categories/${id}`),
 }
 
+export type StatRange = 'week' | 'month' | 'all' | 'custom'
+
 export const statsApi = {
-  overview: () => api.get<StatisticsOverview>('/api/statistics/overview'),
+  // 不传参数返回默认快照（仪表盘口径）；带 range 现场计算范围统计
+  overview: (params?: { range: StatRange; from?: string; to?: string }) => {
+    if (!params) return api.get<StatisticsOverview>('/api/statistics/overview')
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][],
+    ).toString()
+    return api.get<StatisticsOverview>(`/api/statistics/overview?${qs}`)
+  },
 }
 
 export const recommendApi = {

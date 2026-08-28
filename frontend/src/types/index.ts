@@ -55,6 +55,12 @@ export interface StatisticsOverview {
   categoryTimeShare: Record<string, { actual: number; estimated: number; share: number }>
   doneByPriority: Record<string, number>
   dailyHistory: { dateKey: string; minutes: number }[]
+  // 以下字段仅在带 range 参数查询时返回（默认快照不含，见 stats-range-filter-plan.md）
+  range?: 'week' | 'month' | 'all' | 'custom'
+  rangeStart?: string
+  rangeEnd?: string
+  rangeMinutes?: number
+  rangeDoneCount?: number
 }
 
 export interface Recommendation {
