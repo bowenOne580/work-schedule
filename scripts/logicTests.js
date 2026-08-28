@@ -5,7 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { JsonStorage } = require("../src/repository/jsonStorage");
 const { SchedulerService } = require("../src/services/schedulerService");
-const { buildUpdateZipUrls, resolveUpdateSourceDir, parseStatRangeQuery } = require("../src/createApp");
+const { buildUpdateZipUrls, resolveUpdateSourceDir, parseStatRangeQuery, compareVersionsDesc, newestTag } = require("../src/createApp");
 const { AppError } = require("../src/errors");
 
 async function createService() {
@@ -254,6 +254,17 @@ function testParseStatRangeQuery() {
   );
 }
 
+function testCompareVersions() {
+  assert.ok(compareVersionsDesc("v1.1.14", "v1.1.11") > 0, "v1.1.14 > v1.1.11");
+  assert.ok(compareVersionsDesc("1.1.9", "v1.1.14") < 0, "1.1.9 < v1.1.14（前缀不影响比较）");
+  assert.equal(compareVersionsDesc("v1.1.13", "1.1.13"), 0, "同版本相等");
+  assert.ok(compareVersionsDesc("v1.2.0", "v1.1.20") > 0, "逐段比较：1.2.0 > 1.1.20");
+  assert.ok(compareVersionsDesc("v1.1.14", "v1.1.14") === 0, "降级守卫依赖 <=0 判定");
+  // 回归：GitHub tags 按提交时间序、jsDelivr 列表可能滞后，newestTag 必须取语义化最大值
+  assert.equal(newestTag(["v1.0.0", "v1.1.14", "v1.1.11"]), "v1.1.14", "乱序列表取最大");
+  assert.equal(newestTag(["1.1.9", "1.1.10", "1.0.0"]), "1.1.10", "无 v 前缀列表取最大");
+}
+
 async function main() {
   await testRecommendationPriorityAndStatus();
   await testCompleteTaskWithCheckpoints();
@@ -264,6 +275,7 @@ async function main() {
   await testStatRanges();
   testUpdateZipUrls();
   testParseStatRangeQuery();
+  testCompareVersions();
   console.log("Logic tests passed");
 }
 

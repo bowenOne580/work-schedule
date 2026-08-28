@@ -85,8 +85,24 @@ function normalizeTag(version) {
   return trimmed.startsWith("v") ? trimmed : `v${trimmed}`;
 }
 
+// 语义化版本比较：a 比 b 新返回正数；tag 可带可不带 v 前缀
+function compareVersionsDesc(a, b) {
+  const pa = String(a).replace(/^v/, "").split(".").map(Number);
+  const pb = String(b).replace(/^v/, "").split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
+// 版本列表不保证有序（GitHub tags 按提交时间、jsDelivr 数据可能滞后），一律取语义化最大值
+function newestTag(versions) {
+  return [...versions].sort((a, b) => compareVersionsDesc(b, a))[0];
+}
+
 async function fetchLatestTagFromGitHubApi() {
-  const response = await fetch(`https://api.github.com/repos/${GH_REPO}/tags?per_page=1`, {
+  const response = await fetch(`https://api.github.com/repos/${GH_REPO}/tags?per_page=30`, {
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) {
@@ -94,14 +110,13 @@ async function fetchLatestTagFromGitHubApi() {
   }
 
   const tags = await response.json();
-  if (!Array.isArray(tags) || !tags[0]?.name) {
+  if (!Array.isArray(tags) || tags.length === 0) {
     throw new Error("No release tags found");
   }
 
-  return String(tags[0].name);
+  return newestTag(tags.map((t) => String(t?.name || "")).filter(Boolean));
 }
 
-// jsDelivr 的 GH 数据 API 国内可直接访问，versions 按语义化版本降序排列
 async function fetchLatestTagFromJsDelivr() {
   const response = await fetch(`https://data.jsdelivr.com/v1/packages/gh/${GH_REPO}`, {
     signal: AbortSignal.timeout(20_000),
@@ -111,12 +126,14 @@ async function fetchLatestTagFromJsDelivr() {
   }
 
   const data = await response.json();
-  const version = Array.isArray(data?.versions) ? data.versions[0]?.version : null;
-  if (!version) {
+  const versions = Array.isArray(data?.versions)
+    ? data.versions.map((v) => String(v?.version || "")).filter(Boolean)
+    : [];
+  if (versions.length === 0) {
     throw new Error("No release tags found on jsDelivr");
   }
 
-  return normalizeTag(version);
+  return normalizeTag(newestTag(versions));
 }
 
 // 镜像模式优先走国内可达源；任一源失败自动降级到另一个
@@ -514,6 +531,16 @@ function createApp(service, options = {}) {
       try {
         send("downloading", "正在获取最新发布版本...");
         const latestTag = await fetchLatestTag({ mirror });
+
+        // 版本源可能滞后（镜像源曾返回过期列表导致"更新"到旧版本），禁止降级更新
+        const currentVersion = String(require("../package.json").version || "").replace(/^v/, "");
+        if (compareVersionsDesc(latestTag, currentVersion) <= 0) {
+          throw new Error(
+            `版本源返回的最新版本 ${latestTag} 不高于当前版本 v${currentVersion}，已取消更新。` +
+              "镜像版本源的数据可能滞后，可稍后重试或改用非镜像更新。",
+          );
+        }
+
         const { assetUrl, sourceUrl } = buildUpdateZipUrls(latestTag, mirror);
 
         send("downloading", `正在${mirror ? "通过镜像" : "从 GitHub"}下载 ${latestTag}（预构建包）...`);
@@ -774,4 +801,6 @@ module.exports = {
   buildUpdateZipUrls,
   resolveUpdateSourceDir,
   parseStatRangeQuery,
+  compareVersionsDesc,
+  newestTag,
 };
