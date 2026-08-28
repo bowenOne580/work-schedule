@@ -101,6 +101,25 @@ function newestTag(versions) {
   return [...versions].sort((a, b) => compareVersionsDesc(b, a))[0];
 }
 
+// gh-proxy.com（国内可达公共代理）转发 GitHub tags API：数据与 GitHub 实时一致。
+// 取代镜像模式原来的 jsDelivr 首选源——jsDelivr 对本仓库的版本索引长期滞后
+// （2026-08 实测停留在 v1.1.11，/resolved 端点同样滞后），曾导致镜像更新锁定在旧版本。
+async function fetchLatestTagFromGhProxy() {
+  const response = await fetch(`https://gh-proxy.com/https://api.github.com/repos/${GH_REPO}/tags?per_page=30`, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) {
+    throw new Error(`gh-proxy responded with ${response.status}`);
+  }
+
+  const tags = await response.json();
+  if (!Array.isArray(tags) || tags.length === 0) {
+    throw new Error("No release tags found via gh-proxy");
+  }
+
+  return newestTag(tags.map((t) => String(t?.name || "")).filter(Boolean));
+}
+
 async function fetchLatestTagFromGitHubApi() {
   const response = await fetch(`https://api.github.com/repos/${GH_REPO}/tags?per_page=30`, {
     signal: AbortSignal.timeout(20_000),
@@ -136,11 +155,13 @@ async function fetchLatestTagFromJsDelivr() {
   return normalizeTag(newestTag(versions));
 }
 
-// 镜像模式优先走国内可达源；任一源失败自动降级到另一个
+// 镜像模式链路：gh-proxy（国内可达、数据实时，但公共配额偶发限流）→ GitHub 直连 →
+// jsDelivr（仅作最后兜底：其版本索引对本仓库可能滞后，滞后结果会被更新路由的降级守卫拒绝，
+// 只会得到"已是最新"的提示而非错误更新）。任一源失败自动降级到下一个。
 async function fetchLatestTag({ mirror = false } = {}) {
   const chain = mirror
-    ? [fetchLatestTagFromJsDelivr, fetchLatestTagFromGitHubApi]
-    : [fetchLatestTagFromGitHubApi, fetchLatestTagFromJsDelivr];
+    ? [fetchLatestTagFromGhProxy, fetchLatestTagFromGitHubApi, fetchLatestTagFromJsDelivr]
+    : [fetchLatestTagFromGitHubApi, fetchLatestTagFromGhProxy];
 
   let lastError = null;
   for (const source of chain) {
