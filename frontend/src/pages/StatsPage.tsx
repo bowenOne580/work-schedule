@@ -5,7 +5,9 @@ import {
   PieChart, Pie, Cell, Legend, CartesianGrid,
 } from 'recharts'
 
-const PIE_COLORS = ['#EF4444', '#F97316', '#EAB308', '#3B82F6', '#94A3B8']
+// 优先级完成分布（饼图）配色，P1 深 → P5 浅：
+// 「温度计」语义（紧急=热）：烫红/热橙/温黄/凉绿/冷蓝，五档色相全开、一眼可辨。
+const PIE_COLORS = ['#B91C1C', '#EA580C', '#F59E0B', '#10B981', '#0EA5E9']
 
 function fmtMinutes(m: number) {
   if (!m) return '0m'
@@ -93,8 +95,7 @@ export default function StatsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Category dual-bar chart */}
         <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-slate-700 mb-1">分类用时对比</h3>
-          <p className="text-xs text-slate-400 mb-4">预计 vs 实际（分钟）</p>
+          <h3 className="text-sm font-semibold text-slate-700 mb-4">分类用时对比</h3>
           {catBarData.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={catBarData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
@@ -125,6 +126,8 @@ export default function StatsPage() {
                   outerRadius={70}
                   dataKey="value"
                   paddingAngle={2}
+                  startAngle={90}
+                  endAngle={450}
                 >
                   {priorityPieData.map((_, i) => (
                     <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
@@ -148,14 +151,13 @@ export default function StatsPage() {
 
       {/* Daily trend line chart */}
       <div className="bg-white border border-slate-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-slate-700 mb-1">每日用时趋势</h3>
-        <p className="text-xs text-slate-400 mb-4">近 7 天（分钟）</p>
+        <h3 className="text-sm font-semibold text-slate-700 mb-4">每日用时趋势</h3>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={dailyTrendData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
             <XAxis dataKey="date" tick={{ fontSize: 12 }} />
             <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(v: unknown) => fmtMinutes(Number(v))} />
+            <Tooltip formatter={(v: unknown) => [fmtMinutes(Number(v)), null] as [string, null]} />
             <Line type="monotone" dataKey="minutes" stroke="#6366F1" strokeWidth={2} dot={{ fill: '#6366F1', r: 4 }} />
           </LineChart>
         </ResponsiveContainer>

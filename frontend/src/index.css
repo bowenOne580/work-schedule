@@ -29,11 +29,12 @@
   .status-paused { @apply bg-amber-100 text-amber-600; }
   .status-done { @apply bg-emerald-100 text-emerald-600; }
 
-  .priority-bar-1 { background-color: #EF4444; }
-  .priority-bar-2 { background-color: #F97316; }
-  .priority-bar-3 { background-color: #EAB308; }
-  .priority-bar-4 { background-color: #3B82F6; }
-  .priority-bar-5 { background-color: #94A3B8; }
+  /* 与统计页饼图（StatsPage PIE_COLORS）同步的「温度计」语义：紧急=热 */
+  .priority-bar-1 { background-color: #B91C1C; }
+  .priority-bar-2 { background-color: #EA580C; }
+  .priority-bar-3 { background-color: #F59E0B; }
+  .priority-bar-4 { background-color: #10B981; }
+  .priority-bar-5 { background-color: #0EA5E9; }
 }
 
 /* 不放入 @layer：这些类名由 Recharts 运行时生成，
