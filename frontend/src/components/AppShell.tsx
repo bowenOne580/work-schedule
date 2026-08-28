@@ -30,13 +30,15 @@ export default function AppShell() {
     <div className="flex h-screen overflow-hidden bg-slate-50">
       {/* Sidebar - desktop */}
       <aside
-        className={`hidden md:flex flex-col border-r border-slate-200 bg-white transition-all duration-200 ${
+        className={`hidden md:flex flex-col border-r border-slate-200 bg-white transition-all duration-200 overflow-hidden ${
           collapsed ? 'w-16' : 'w-56'
         }`}
       >
         <div className="flex items-center justify-between px-4 h-14 border-b border-slate-200">
           {!collapsed && (
-            <span className="font-semibold text-slate-800 text-sm tracking-wide">Work Schedule</span>
+            <span className="font-semibold text-slate-800 text-sm tracking-wide truncate">
+              Work Schedule
+            </span>
           )}
           <button
             onClick={() => setCollapsed(!collapsed)}
@@ -53,7 +55,7 @@ export default function AppShell() {
               to={to}
               end={end}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                `flex items-center gap-3 px-3 h-9 rounded-md text-sm transition-colors overflow-hidden whitespace-nowrap ${
                   isActive
                     ? 'bg-indigo-50 text-indigo-600 font-medium'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
@@ -69,9 +71,7 @@ export default function AppShell() {
         <div className="px-2 pb-4">
           <button
             onClick={() => logout.mutate(undefined)}
-            className={`flex items-center gap-3 w-full px-3 py-2 rounded-md text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors ${
-              collapsed ? 'justify-center' : ''
-            }`}
+            className="flex items-center gap-3 w-full px-3 h-9 rounded-md text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors overflow-hidden whitespace-nowrap"
           >
             <LogOut size={18} className="shrink-0" />
             {!collapsed && <span>退出登录</span>}
