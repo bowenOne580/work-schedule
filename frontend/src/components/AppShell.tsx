@@ -42,7 +42,9 @@ export default function AppShell() {
           )}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors ml-auto"
+            className={`p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-200 ml-auto ${
+              collapsed ? 'mr-[5px]' : ''
+            }`}
           >
             {collapsed ? <Menu size={16} /> : <X size={16} />}
           </button>
@@ -55,7 +57,7 @@ export default function AppShell() {
               to={to}
               end={end}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 h-9 rounded-md text-sm transition-colors overflow-hidden whitespace-nowrap ${
+                `flex items-center gap-3 px-3 ${collapsed ? 'w-[44px]' : 'w-full'} h-9 rounded-md text-sm transition-all duration-200 overflow-hidden whitespace-nowrap ${
                   isActive
                     ? 'bg-indigo-50 text-indigo-600 font-medium'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
@@ -71,7 +73,7 @@ export default function AppShell() {
         <div className="px-2 pb-4">
           <button
             onClick={() => logout.mutate(undefined)}
-            className="flex items-center gap-3 w-full px-3 h-9 rounded-md text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors overflow-hidden whitespace-nowrap"
+            className={`flex items-center gap-3 px-3 ${collapsed ? 'w-[44px]' : 'w-full'} h-9 rounded-md text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-all duration-200 overflow-hidden whitespace-nowrap`}
           >
             <LogOut size={18} className="shrink-0" />
             {!collapsed && <span>退出登录</span>}
