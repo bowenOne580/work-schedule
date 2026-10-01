@@ -238,16 +238,12 @@
             ? '<p class="muted">该任务已归档，仅保留查看和删除操作。</p>'
             : `<form id="task-quick-update" class="inline-form">
           <label>
-            任务级预计分钟（无检查点时生效）
+            任务级预计分钟（选填）
             <input name="estimatedMinutes" type="number" min="0" value="${detail.directEstimatedMinutes ?? detail.estimatedMinutes ?? ""}" />
           </label>
           <label>
             进度（无检查点时生效）
             <input name="progress" type="number" min="0" max="100" value="${detail.progress}" />
-          </label>
-          <label>
-            任务级已用分钟（无检查点时生效）
-            <input name="actualMinutes" type="number" min="0" value="${detail.directMinutes || 0}" />
           </label>
           <button type="submit">更新任务</button>
         </form>`
@@ -265,12 +261,8 @@
             <input name="title" required placeholder="例如：完成章节1例题" />
           </label>
           <label>
-            预计分钟
+            预计分钟（选填）
             <input name="estimatedMinutes" type="number" min="0" />
-          </label>
-          <label>
-            已用分钟
-            <input name="actualMinutes" type="number" min="0" value="0" />
           </label>
           <button type="submit">添加检查点</button>
         </form>
@@ -376,7 +368,6 @@
             body: JSON.stringify({
               estimatedMinutes: data.get("estimatedMinutes") ? Number(data.get("estimatedMinutes")) : null,
               progress: Number(data.get("progress")),
-              actualMinutes: Number(data.get("actualMinutes")),
             }),
           });
           await refresh();
@@ -396,7 +387,6 @@
             body: JSON.stringify({
               title: String(data.get("title") || "").trim(),
               estimatedMinutes: data.get("estimatedMinutes") ? Number(data.get("estimatedMinutes")) : null,
-              actualMinutes: Number(data.get("actualMinutes") || 0),
             }),
           });
           await refresh();
@@ -432,20 +422,7 @@
           }
           await api(`/api/checkpoints/${checkpointId}`, { method: "DELETE" });
         } else if (action === "complete") {
-          const currentMinutes = container.querySelector(".checkpoint-minutes")?.dataset.actualMinutes || "0";
-          const input = window.prompt("请输入该检查点实际花费的时间（分钟）", currentMinutes);
-          if (input === null) {
-            return;
-          }
-          const actualMinutes = Number(input);
-          if (!Number.isFinite(actualMinutes) || actualMinutes < 0) {
-            toast("请输入大于等于 0 的有效分钟数");
-            return;
-          }
-          await api(`/api/checkpoints/${checkpointId}/complete`, {
-            method: "POST",
-            body: JSON.stringify({ actualMinutes }),
-          });
+          await api(`/api/checkpoints/${checkpointId}/complete`, { method: "POST" });
         } else {
           await api(`/api/checkpoints/${checkpointId}/${action}`, { method: "POST" });
         }
@@ -576,7 +553,6 @@
         .filter(Boolean),
       manualPriority: Number(data.get("manualPriority") || 3),
       estimatedMinutes: data.get("estimatedMinutes") ? Number(data.get("estimatedMinutes")) : null,
-      actualMinutes: Number(data.get("actualMinutes") || 0),
       deadline: data.get("deadline") ? String(data.get("deadline")) : null,
     };
 

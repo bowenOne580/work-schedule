@@ -1,15 +1,11 @@
 import { useState } from 'react'
-import { useQuery, useMutation, invalidate, invalidatePrefix } from '../hooks/useApi'
+import { useQuery, useMutation, invalidateWorkData } from '../hooks/useApi'
+import { useTaskMinutes } from '../hooks/useTaskMinutes'
+import { fmtMinutes } from '../utils/time'
 import { tasksApi, checkpointsApi, categoriesApi } from '../api'
 import { ProgressBar, StatusBadge } from './ui'
 import type { Task, TaskAction } from '../types'
 import { ArrowLeft, Plus, Check, SkipForward, RotateCcw, Trash2 } from 'lucide-react'
-
-function fmtMinutes(m: number) {
-  if (!m) return '—'
-  if (m < 60) return `${m}m`
-  return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`
-}
 
 const ACTION_LABELS: Record<string, string> = {
   start: '开始', pause: '暂停', resume: '继续', complete: '完成', postpone: '推迟',
@@ -29,48 +25,6 @@ function availableActions(status: Task['status']): TaskAction[] {
     case 'paused': return ['resume', 'complete', 'postpone']
     case 'done': return []
   }
-}
-
-interface CompleteModalProps {
-  label: string
-  estimatedMinutes?: number
-  onConfirm: (minutes: number | undefined) => void
-  onCancel: () => void
-  pending: boolean
-}
-
-export function CompleteModal({ label, estimatedMinutes, onConfirm, onCancel, pending }: CompleteModalProps) {
-  const [val, setVal] = useState(estimatedMinutes ? String(estimatedMinutes) : '')
-
-  return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 px-4" onClick={onCancel}>
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-xs p-5 space-y-4" onClick={e => e.stopPropagation()}>
-        <h2 className="text-base font-semibold text-slate-800">完成「{label}」</h2>
-        <div>
-          <label className="text-xs text-slate-500 mb-1 block">实际花费时间（分钟）</label>
-          <input
-            autoFocus
-            type="number"
-            min="0"
-            value={val}
-            onChange={e => setVal(e.target.value)}
-            placeholder={estimatedMinutes ? `预计 ${estimatedMinutes} 分钟` : '可不填'}
-            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-400"
-          />
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">取消</button>
-          <button
-            onClick={() => onConfirm(val ? Number(val) : undefined)}
-            disabled={pending}
-            className="px-4 py-2 text-sm text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg disabled:opacity-50"
-          >
-            确认完成
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 function addDays(base: string | null, days: number): string {
@@ -167,32 +121,19 @@ export default function TaskDetail({ taskId, onBack }: Props) {
   const [newCpMinutes, setNewCpMinutes] = useState('')
   const [addingCp, setAddingCp] = useState(false)
   const [showPostpone, setShowPostpone] = useState(false)
-  // { type: 'task' } | { type: 'checkpoint', id, title, estimatedMinutes }
-  const [completeTarget, setCompleteTarget] = useState<
-    | { type: 'task' }
-    | { type: 'checkpoint'; id: string; title: string; estimatedMinutes: number }
-    | null
-  >(null)
-
   // Single fetch — backend embeds checkpoints in GET /api/tasks/:id
   const { data: task, loading, error } = useQuery(`task:${taskId}`, () => tasksApi.get(taskId))
   const { data: categories = [] } = useQuery('categories', categoriesApi.list)
 
-  const refresh = () => {
-    invalidatePrefix('task:')
-    invalidate('tasks')
-    invalidate('stats')
-    invalidate('recommendations')
-    invalidate('anomalies')
-  }
+  const actualMinutes = useTaskMinutes(task)
+  const refresh = invalidateWorkData
 
   const updateTask = useMutation(
     (body: Partial<Task>) => tasksApi.update(taskId, body),
     { onSuccess: refresh }
   )
   const doAction = useMutation(
-    ({ action, actualMinutes }: { action: TaskAction; actualMinutes?: number }) =>
-      tasksApi.action(taskId, action, actualMinutes !== undefined ? { actualMinutes } : undefined),
+    ({ action }: { action: TaskAction }) => tasksApi.action(taskId, action),
     { onSuccess: refresh }
   )
   const postponeTask = useMutation(
@@ -206,13 +147,12 @@ export default function TaskDetail({ taskId, onBack }: Props) {
     () => checkpointsApi.create(taskId, {
       title: newCpTitle,
       order: (task?.checkpoints?.length ?? 0) + 1,
-      estimatedMinutes: newCpMinutes ? Number(newCpMinutes) : 0,
+      estimatedMinutes: newCpMinutes ? Number(newCpMinutes) : null,
     }),
     { onSuccess: () => { setNewCpTitle(''); setNewCpMinutes(''); setAddingCp(false); refresh() } }
   )
   const completeCheckpoint = useMutation(
-    ({ id, actualMinutes }: { id: string; actualMinutes?: number }) =>
-      checkpointsApi.complete(id, actualMinutes),
+    (id: string) => checkpointsApi.complete(id),
     { onSuccess: refresh }
   )
   const skipCheckpoint = useMutation(
@@ -341,26 +281,52 @@ export default function TaskDetail({ taskId, onBack }: Props) {
             )}
           </div>
           <div className="bg-slate-50 rounded-lg p-3">
-            <p className="text-xs text-slate-400 mb-1">估时 / 实际</p>
-            <p className="text-slate-700">{fmtMinutes(task.estimatedMinutes)} / {fmtMinutes(task.actualMinutes)}</p>
+            <label htmlFor="detail-estimate" className="text-xs text-slate-400 mb-1 block">预计时间（分钟，选填）</label>
+            {readonly || checkpoints.length > 0 ? (
+              <p className="text-slate-700">{fmtMinutes(task.estimatedMinutes)}</p>
+            ) : (
+              <input
+                id="detail-estimate"
+                key={`${task.id}:${task.directEstimatedMinutes}`}
+                type="number"
+                min="0"
+                defaultValue={task.directEstimatedMinutes ?? ''}
+                placeholder="可留空"
+                onBlur={e => {
+                  const value = e.target.value === '' ? null : Number(e.target.value)
+                  if (value !== task.directEstimatedMinutes && (value === null || value >= 0)) {
+                    updateTask.mutate({ estimatedMinutes: value })
+                  }
+                }}
+                className="w-full bg-transparent text-slate-700 outline-none text-sm"
+              />
+            )}
+          </div>
+          <div className="col-span-2 bg-slate-50 rounded-lg p-3">
+            <p className="text-xs text-slate-400 mb-1">实际用时（自动累计）</p>
+            <p className="text-slate-700">
+              <span role="timer" aria-label="累计用时">{fmtMinutes(actualMinutes)}</span>
+              {task.status === 'in_progress' && <span className="ml-2 text-xs text-indigo-500">计时中</span>}
+              {task.status === 'paused' && <span className="ml-2 text-xs text-slate-500">已暂停</span>}
+            </p>
           </div>
         </div>
 
         {/* Time comparison tracks */}
-        {(task.estimatedMinutes > 0 || task.actualMinutes > 0) && (() => {
+        {((task.estimatedMinutes ?? 0) > 0 || actualMinutes > 0) && (() => {
           const est = task.estimatedMinutes || 0
-          const act = task.actualMinutes || 0
+          const act = actualMinutes
           const max = Math.max(est, act, 1)
           const overTime = act > est && est > 0
           return (
             <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-xs text-slate-500">
+              {task.estimatedMinutes != null && <div className="flex items-center gap-2 text-xs text-slate-500">
                 <span className="w-8 text-right shrink-0">预计</span>
                 <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div className="h-full bg-indigo-300 rounded-full" style={{ width: `${(est / max) * 100}%` }} />
                 </div>
                 <span className="w-10 shrink-0">{fmtMinutes(est)}</span>
-              </div>
+              </div>}
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <span className="w-8 text-right shrink-0">实际</span>
                 <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -403,7 +369,6 @@ export default function TaskDetail({ taskId, onBack }: Props) {
                 key={action}
                 onClick={() => {
                   if (action === 'postpone') { setShowPostpone(true) }
-                  else if (action === 'complete') { setCompleteTarget({ type: 'task' }) }
                   else { doAction.mutate({ action }) }
                 }}
                 disabled={doAction.pending || postponeTask.pending}
@@ -421,27 +386,6 @@ export default function TaskDetail({ taskId, onBack }: Props) {
             onConfirm={newDeadline => postponeTask.mutate(newDeadline)}
             onCancel={() => setShowPostpone(false)}
             pending={postponeTask.pending}
-          />
-        )}
-
-        {completeTarget && (
-          <CompleteModal
-            label={completeTarget.type === 'task' ? task.title : completeTarget.title}
-            estimatedMinutes={
-              completeTarget.type === 'task'
-                ? task.estimatedMinutes
-                : completeTarget.estimatedMinutes
-            }
-            onConfirm={minutes => {
-              if (completeTarget.type === 'task') {
-                doAction.mutate({ action: 'complete', actualMinutes: minutes })
-              } else {
-                completeCheckpoint.mutate({ id: completeTarget.id, actualMinutes: minutes })
-              }
-              setCompleteTarget(null)
-            }}
-            onCancel={() => setCompleteTarget(null)}
-            pending={doAction.pending || completeCheckpoint.pending}
           />
         )}
 
@@ -471,7 +415,8 @@ export default function TaskDetail({ taskId, onBack }: Props) {
                     {!cp.completed && !cp.skipped && (
                       <>
                         <button
-                          onClick={() => setCompleteTarget({ type: 'checkpoint', id: cp.id, title: cp.title, estimatedMinutes: cp.estimatedMinutes })}
+                          onClick={() => completeCheckpoint.mutate(cp.id)}
+                          disabled={completeCheckpoint.pending || skipCheckpoint.pending || doAction.pending}
                           className="w-5 h-5 rounded border border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 flex items-center justify-center transition-colors"
                           title="完成"
                         >
@@ -516,7 +461,7 @@ export default function TaskDetail({ taskId, onBack }: Props) {
                 <span className={`flex-1 text-sm ${cp.completed || cp.skipped ? 'line-through text-slate-400' : 'text-slate-700'}`}>
                   {cp.title}
                 </span>
-                {cp.estimatedMinutes > 0 && (
+                {(cp.estimatedMinutes ?? 0) > 0 && (
                   <span className="text-xs text-slate-400">{fmtMinutes(cp.estimatedMinutes)}</span>
                 )}
                 {!readonly && (
@@ -551,7 +496,9 @@ export default function TaskDetail({ taskId, onBack }: Props) {
                       if (e.key === 'Enter' && newCpTitle.trim()) addCheckpoint.mutate(undefined)
                       if (e.key === 'Escape') { setAddingCp(false); setNewCpTitle(''); setNewCpMinutes('') }
                     }}
-                    placeholder="分钟"
+                    aria-label="检查点预计时间（分钟，选填）"
+                    min="0"
+                    placeholder="选填分钟"
                     className="w-20 text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-400"
                   />
                   <button

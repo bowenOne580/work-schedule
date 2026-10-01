@@ -6,6 +6,7 @@
   "scripts": {
     "auth:init": "node scripts/initAuth.js",
     "test:logic": "node scripts/logicTests.js",
+    "test:timing": "node scripts/timingTests.js",
     "start": "WORK_SCHEDULE_CORS_ORIGINS=http://localhost:5173 node server.js"
   },
   "keywords": [

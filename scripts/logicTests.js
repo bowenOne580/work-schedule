@@ -34,18 +34,21 @@ async function testRecommendationPriorityAndStatus() {
 
 async function testCompleteTaskWithCheckpoints() {
   const service = await createService();
+  let now = Date.now();
+  service.now = () => now;
   const task = await service.createTask({ title: "checkpoint task", estimatedMinutes: 30 });
   const checkpoint = await service.createCheckpoint(task.id, { title: "cp", estimatedMinutes: 30 });
 
   await service.runTaskAction(task.id, "start");
-  await service.runTaskAction(task.id, "complete", { actualMinutes: 45 });
+  now += 45 * 60_000;
+  await service.runTaskAction(task.id, "complete");
 
   const detail = await service.getTaskById(task.id);
   assert.equal(detail.status, "done");
   assert.equal(detail.actualMinutes, 45);
   assert.equal(detail.checkpoints[0].id, checkpoint.id);
   assert.equal(detail.checkpoints[0].completed, true);
-  assert.equal(detail.checkpoints[0].actualMinutes, 45);
+  assert.equal(detail.checkpoints[0].actualMinutes, 0, "任务总用时由计时器记录，不分摊到检查点");
 }
 
 async function testSkippedCheckpointResolvesTask() {
@@ -55,7 +58,7 @@ async function testSkippedCheckpointResolvesTask() {
   const cp2 = await service.createCheckpoint(task.id, { title: "cp2", estimatedMinutes: 10 });
 
   await service.runTaskAction(task.id, "start");
-  await service.completeCheckpoint(cp1.id, { actualMinutes: 5 });
+  await service.completeCheckpoint(cp1.id);
   await service.skipCheckpoint(cp2.id);
 
   const detail = await service.getTaskById(task.id);
@@ -65,8 +68,10 @@ async function testSkippedCheckpointResolvesTask() {
 
 async function testZeroMinuteDoneCountsToday() {
   const service = await createService();
+  const now = Date.now();
+  service.now = () => now;
   const task = await service.createTask({ title: "zero actual", estimatedMinutes: 30 });
-  await service.runTaskAction(task.id, "complete", { actualMinutes: 0 });
+  await service.runTaskAction(task.id, "complete");
 
   const stats = await service.getStatisticsOverview();
   assert.equal(stats.dailyDoneCount, 1);

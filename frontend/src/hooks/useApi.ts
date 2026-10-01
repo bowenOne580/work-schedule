@@ -23,6 +23,14 @@ export function invalidatePrefix(prefix: string) {
   }
 }
 
+export function invalidateWorkData() {
+  invalidatePrefix('task:')
+  invalidate('tasks')
+  invalidatePrefix('stats')
+  invalidate('recommendations')
+  invalidate('anomalies')
+}
+
 export function setCache(key: string, data: unknown) {
   cache.set(key, { data, ts: Date.now() })
   notify(key)

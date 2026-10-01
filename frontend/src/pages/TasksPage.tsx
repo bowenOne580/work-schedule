@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useMutation, invalidate } from '../hooks/useApi'
+import { useQuery, useMutation, invalidateWorkData } from '../hooks/useApi'
 import { tasksApi, categoriesApi } from '../api'
 import { StatusBadge, ProgressBar } from '../components/ui'
 import TaskDetail from '../components/TaskDetail'
@@ -23,7 +23,7 @@ function NewTaskModal({ onClose, defaultCategoryId }: { onClose: () => void; def
       deadline: deadline || undefined,
       estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : undefined,
     }),
-    { onSuccess: () => { invalidate('tasks'); onClose() } }
+    { onSuccess: () => { invalidateWorkData(); onClose() } }
   )
 
   return (
@@ -72,12 +72,14 @@ function NewTaskModal({ onClose, defaultCategoryId }: { onClose: () => void; def
             />
           </div>
           <div>
-            <label className="text-xs text-slate-500 mb-1 block">估时（分钟）</label>
+            <label htmlFor="task-estimate" className="text-xs text-slate-500 mb-1 block">预计时间（分钟，选填）</label>
             <input
+              id="task-estimate"
               type="number"
+              min="0"
               value={estimatedMinutes}
               onChange={e => setEstimatedMinutes(e.target.value)}
-              placeholder="60"
+              placeholder="可留空"
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-400"
             />
           </div>
@@ -225,8 +227,9 @@ export default function TasksPage() {
         return new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
       }
       case 'remaining': {
-        const remA = Math.max(0, a.estimatedMinutes - a.actualMinutes)
-        const remB = Math.max(0, b.estimatedMinutes - b.actualMinutes)
+        const remA = a.estimatedMinutes == null ? Infinity : Math.max(0, a.estimatedMinutes - a.actualMinutes)
+        const remB = b.estimatedMinutes == null ? Infinity : Math.max(0, b.estimatedMinutes - b.actualMinutes)
+        if (remA === remB) return 0
         return remA - remB
       }
       case 'score':

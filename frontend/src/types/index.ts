@@ -8,8 +8,8 @@ export interface Task {
   categoryId: string
   tags: string[]
   manualPriority: number
-  directEstimatedMinutes: number
-  estimatedMinutes: number
+  directEstimatedMinutes: number | null
+  estimatedMinutes: number | null
   deadline: string | null
   status: TaskStatus
   progress: number
@@ -17,6 +17,8 @@ export interface Task {
   checkpoints?: Checkpoint[]  // included when fetching single task
   directMinutes: number
   actualMinutes: number
+  accumulatedMs: number
+  timerStartedAt: string | null
   anomalyFlags: AnomalyFlag[]
   anomalyIgnored: boolean
   createdAt: string
@@ -29,7 +31,7 @@ export interface Checkpoint {
   taskId: string
   title: string
   order: number
-  estimatedMinutes: number
+  estimatedMinutes: number | null
   actualMinutes: number
   completed: boolean
   skipped: boolean

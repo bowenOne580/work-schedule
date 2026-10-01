@@ -1,30 +1,18 @@
-import { useState } from 'react'
-import { useQuery, useMutation, invalidate } from '../hooks/useApi'
+import { useQuery, useMutation, invalidateWorkData } from '../hooks/useApi'
 import { tasksApi, recommendApi, statsApi } from '../api'
 import { ProgressBar, StatusBadge } from '../components/ui'
-import { CompleteModal } from '../components/TaskDetail'
+import { useTaskMinutes } from '../hooks/useTaskMinutes'
+import { fmtMinutes } from '../utils/time'
 import type { Task, Recommendation } from '../types'
 import { Play, Pause, CheckCircle, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-function invalidateWorkData() {
-  invalidate('tasks')
-  invalidate('stats')
-  invalidate('recommendations')
-  invalidate('anomalies')
-}
-
-function fmtMinutes(m: number) {
-  if (m < 60) return `${m}m`
-  return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`
-}
-
 function InProgressCard({ task, onNavigate }: { task: Task; onNavigate: (id: string) => void }) {
-  const [showComplete, setShowComplete] = useState(false)
+  const actualMinutes = useTaskMinutes(task)
   const pause = useMutation(() => tasksApi.action(task.id, 'pause'), { onSuccess: invalidateWorkData })
   const complete = useMutation(
-    (minutes?: number) => tasksApi.action(task.id, 'complete', minutes !== undefined ? { actualMinutes: minutes } : undefined),
-    { onSuccess: () => { setShowComplete(false); invalidateWorkData() } }
+    () => tasksApi.action(task.id, 'complete'),
+    { onSuccess: invalidateWorkData }
   )
 
   return (
@@ -43,14 +31,14 @@ function InProgressCard({ task, onNavigate }: { task: Task; onNavigate: (id: str
         <div className="flex gap-2 shrink-0">
           <button
             onClick={() => pause.mutate(undefined)}
-            disabled={pause.pending}
+            disabled={pause.pending || complete.pending}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
           >
             <Pause size={13} /> 暂停
           </button>
           <button
-            onClick={() => setShowComplete(true)}
-            disabled={complete.pending}
+            onClick={() => complete.mutate(undefined)}
+            disabled={pause.pending || complete.pending}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors"
           >
             <CheckCircle size={13} /> 完成
@@ -61,19 +49,10 @@ function InProgressCard({ task, onNavigate }: { task: Task; onNavigate: (id: str
       <ProgressBar value={task.progress} />
       <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
         <span className="flex items-center gap-1"><Clock size={11} /> 估时 {fmtMinutes(task.estimatedMinutes)}</span>
-        <span>实际 {fmtMinutes(task.actualMinutes)}</span>
+        <span role="timer" aria-label="累计用时">计时中 {fmtMinutes(actualMinutes)}</span>
         <span>{Math.round(task.progress)}%</span>
       </div>
 
-      {showComplete && (
-        <CompleteModal
-          label={task.title}
-          estimatedMinutes={task.estimatedMinutes}
-          onConfirm={minutes => complete.mutate(minutes)}
-          onCancel={() => setShowComplete(false)}
-          pending={complete.pending}
-        />
-      )}
     </div>
   )
 }
@@ -94,7 +73,7 @@ function RecommendCard({ rec, onNavigate }: { rec: Recommendation; onNavigate: (
       <div className="flex items-center justify-between text-xs text-slate-400">
         <div className="flex items-center gap-2">
           <span className="font-medium text-slate-600">P{task.manualPriority}</span>
-          {task.estimatedMinutes > 0 && <span>{fmtMinutes(task.estimatedMinutes)}</span>}
+          <span>{fmtMinutes(task.estimatedMinutes)}</span>
           {task.deadline && <span>{task.deadline}</span>}
         </div>
         <span className="text-indigo-400 font-medium">{(score * 100).toFixed(0)}分</span>

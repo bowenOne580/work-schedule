@@ -1,3 +1,4 @@
+import { fmtMinutes } from '../utils/time'
 import { useState, useEffect } from 'react'
 import { useQuery } from '../hooks/useApi'
 import { statsApi, categoriesApi, type StatRange } from '../api'
@@ -9,12 +10,6 @@ import {
 // 优先级完成分布（饼图）配色，P1 深 → P5 浅：
 // 「温度计」语义（紧急=热）：烫红/热橙/温黄/凉绿/冷蓝，五档色相全开、一眼可辨。
 const PIE_COLORS = ['#B91C1C', '#EA580C', '#F59E0B', '#10B981', '#0EA5E9']
-
-function fmtMinutes(m: number) {
-  if (!m) return '0m'
-  if (m < 60) return `${m}m`
-  return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`
-}
 
 function fmtPercent(v: number | null) {
   if (v === null) return '—'

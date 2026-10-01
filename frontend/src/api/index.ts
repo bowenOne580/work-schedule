@@ -27,8 +27,7 @@ export const checkpointsApi = {
   update: (id: string, body: Partial<Checkpoint>) =>
     api.patch<Checkpoint>(`/api/checkpoints/${id}`, body),
   delete: (id: string) => api.delete(`/api/checkpoints/${id}`),
-  complete: (id: string, actualMinutes?: number) =>
-    api.post<Checkpoint>(`/api/checkpoints/${id}/complete`, actualMinutes !== undefined ? { actualMinutes } : undefined),
+  complete: (id: string) => api.post<Checkpoint>(`/api/checkpoints/${id}/complete`),
   skip: (id: string) => api.post<Checkpoint>(`/api/checkpoints/${id}/skip`),
   uncomplete: (id: string) => api.post<Checkpoint>(`/api/checkpoints/${id}/uncomplete`),
 }

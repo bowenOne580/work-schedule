@@ -1,3 +1,4 @@
+import { fmtMinutes } from '../utils/time'
 import { useState } from 'react'
 import { useQuery } from '../hooks/useApi'
 import { tasksApi } from '../api'
@@ -19,8 +20,8 @@ function timeRatioDot(task: Task) {
 function fmtPct(task: Task) {
   const est = task.estimatedMinutes ?? 0
   const act = task.actualMinutes ?? 0
-  if (est <= 0) return act > 0 ? `实际 ${act}m` : null
-  return `${Math.round((act / est) * 100)}%（${act}m / ${est}m）`
+  if (est <= 0) return act > 0 ? `实际 ${fmtMinutes(act)}` : null
+  return `${Math.round((act / est) * 100)}%（${fmtMinutes(act)} / ${fmtMinutes(est)}）`
 }
 
 function ArchiveTaskRow({ task, onClick }: { task: Task; onClick: () => void }) {

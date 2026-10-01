@@ -4,10 +4,6 @@ const { AppError } = require("../errors");
 const { ACTION, ANOMALY_FLAGS, CATEGORY, TASK_STATUS } = require("../constants");
 const pkg = require(path.join(__dirname, "..", "..", "package.json"));
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -99,8 +95,25 @@ function isNonNegativeFinite(value) {
 }
 
 class SchedulerService {
-  constructor(storage) {
+  constructor(storage, { now = () => Date.now() } = {}) {
     this.storage = storage;
+    this.now = now;
+  }
+
+  #nowIso() {
+    return new Date(this.now()).toISOString();
+  }
+
+  #rejectManualTime(payload) {
+    if (["actualMinutes", "directMinutes", "accumulatedMs", "timerStartedAt"].some((key) => key in payload)) {
+      throw new AppError(400, "ACTUAL_TIME_READ_ONLY", "实际用时由任务计时自动记录，不能手动填写");
+    }
+  }
+
+  #settleTimer(task) {
+    if (!task.timerStartedAt) return;
+    task.accumulatedMs += Math.max(0, this.now() - new Date(task.timerStartedAt).getTime());
+    task.timerStartedAt = null;
   }
 
   async getTasks() {
@@ -131,6 +144,7 @@ class SchedulerService {
   }
 
   async createTask(payload) {
+    this.#rejectManualTime(payload);
     return this.storage.runExclusive((state, tx) => {
       this.#prepareState(state);
       const title = (payload.title || "").trim();
@@ -139,7 +153,7 @@ class SchedulerService {
       }
 
       const categoryId = this.#resolveCategoryId(state, payload.categoryId);
-      const createdAt = nowIso();
+      const createdAt = this.#nowIso();
       const estimatedMinutes = payload.estimatedMinutes == null ? null : toInt(payload.estimatedMinutes, 0);
       const task = {
         id: randomUUID(),
@@ -153,8 +167,10 @@ class SchedulerService {
         status: TASK_STATUS.TODO,
         progress: clampProgress(payload.progress ?? 0),
         checkpointIds: [],
-        directMinutes: toInt(payload.actualMinutes, 0),
-        actualMinutes: toInt(payload.actualMinutes, 0),
+        accumulatedMs: 0,
+        timerStartedAt: null,
+        directMinutes: 0,
+        actualMinutes: 0,
         anomalyFlags: [],
         anomalyIgnored: false,
         createdAt,
@@ -169,6 +185,7 @@ class SchedulerService {
   }
 
   async updateTask(taskId, payload) {
+    this.#rejectManualTime(payload);
     return this.storage.runExclusive((state, tx) => {
       this.#prepareState(state);
       const task = state.tasks.find((item) => item.id === taskId);
@@ -216,11 +233,7 @@ class SchedulerService {
         task.progress = clampProgress(payload.progress);
       }
 
-      if (payload.actualMinutes !== undefined) {
-        task.directMinutes = toInt(payload.actualMinutes, 0);
-      }
-
-      task.updatedAt = nowIso();
+      task.updatedAt = this.#nowIso();
       this.#prepareState(state);
       tx.commit();
       return task;
@@ -228,6 +241,7 @@ class SchedulerService {
   }
 
   async runTaskAction(taskId, action, payload = {}) {
+    this.#rejectManualTime(payload);
     return this.storage.runExclusive((state, tx) => {
       this.#prepareState(state);
       const task = state.tasks.find((item) => item.id === taskId);
@@ -259,8 +273,9 @@ class SchedulerService {
           throw new AppError(409, "INVALID_STATE_TRANSITION", "Task cannot be postponed from current status");
         }
         this.#appendAnomalyFlag(task, ANOMALY_FLAGS.POSTPONED);
+        this.#settleTimer(task);
         task.status = TASK_STATUS.TODO;
-        task.updatedAt = nowIso();
+        task.updatedAt = this.#nowIso();
         this.#prepareState(state);
         tx.commit();
         return task;
@@ -275,18 +290,20 @@ class SchedulerService {
         throw new AppError(409, "INVALID_STATE_TRANSITION", "Action is not allowed for current task status");
       }
 
+      if (action === ACTION.START || action === ACTION.RESUME) {
+        task.timerStartedAt = this.#nowIso();
+      } else {
+        this.#settleTimer(task);
+      }
       task.status = rule.to;
       if (action === ACTION.COMPLETE) {
         task.progress = 100;
         task.anomalyFlags = [];
         task.anomalyIgnored = false;
-        task.finishedAt = nowIso();
-        if (payload.actualMinutes !== undefined) {
-          task.directMinutes = toInt(payload.actualMinutes, 0);
-        }
-        this.#completeRemainingCheckpoints(task, state.checkpoints, payload.actualMinutes);
+        task.finishedAt = this.#nowIso();
+        this.#completeRemainingCheckpoints(task, state.checkpoints);
       }
-      task.updatedAt = nowIso();
+      task.updatedAt = this.#nowIso();
 
       this.#prepareState(state);
       tx.commit();
@@ -312,6 +329,7 @@ class SchedulerService {
   }
 
   async createCheckpoint(taskId, payload) {
+    this.#rejectManualTime(payload);
     return this.storage.runExclusive((state, tx) => {
       this.#prepareState(state);
       const task = state.tasks.find((item) => item.id === taskId);
@@ -332,7 +350,7 @@ class SchedulerService {
         title,
         order: payload.order == null ? maxOrder + 1 : toInt(payload.order, maxOrder + 1),
         estimatedMinutes: payload.estimatedMinutes == null ? null : toInt(payload.estimatedMinutes, 0),
-        actualMinutes: toInt(payload.actualMinutes, 0),
+        actualMinutes: 0,
         completed: Boolean(payload.completed),
         skipped: Boolean(payload.skipped),
       };
@@ -344,7 +362,7 @@ class SchedulerService {
         checkpoint.skipped = false;
       }
 
-      task.updatedAt = nowIso();
+      task.updatedAt = this.#nowIso();
       state.checkpoints.push(checkpoint);
 
       this.#prepareState(state);
@@ -354,6 +372,7 @@ class SchedulerService {
   }
 
   async updateCheckpoint(checkpointId, payload) {
+    this.#rejectManualTime(payload);
     return this.storage.runExclusive((state, tx) => {
       this.#prepareState(state);
       const checkpoint = state.checkpoints.find((item) => item.id === checkpointId);
@@ -382,10 +401,6 @@ class SchedulerService {
         checkpoint.estimatedMinutes = payload.estimatedMinutes == null ? null : toInt(payload.estimatedMinutes, 0);
       }
 
-      if (payload.actualMinutes !== undefined) {
-        checkpoint.actualMinutes = toInt(payload.actualMinutes, 0);
-      }
-
       if (payload.completed !== undefined) {
         checkpoint.completed = Boolean(payload.completed);
         if (checkpoint.completed) {
@@ -401,7 +416,7 @@ class SchedulerService {
         }
       }
 
-      task.updatedAt = nowIso();
+      task.updatedAt = this.#nowIso();
       this.#prepareState(state);
       tx.commit();
       return checkpoint;
@@ -409,11 +424,8 @@ class SchedulerService {
   }
 
   async completeCheckpoint(checkpointId, payload = {}) {
-    const update = { completed: true, skipped: false };
-    if (payload.actualMinutes !== undefined) {
-      update.actualMinutes = payload.actualMinutes;
-    }
-    return this.updateCheckpoint(checkpointId, update);
+    this.#rejectManualTime(payload);
+    return this.updateCheckpoint(checkpointId, { completed: true, skipped: false });
   }
 
   async skipCheckpoint(checkpointId) {
@@ -435,7 +447,7 @@ class SchedulerService {
       const [checkpoint] = state.checkpoints.splice(idx, 1);
       const task = state.tasks.find((item) => item.id === checkpoint.taskId);
       if (task) {
-        task.updatedAt = nowIso();
+        task.updatedAt = this.#nowIso();
       }
 
       this.#prepareState(state);
@@ -568,7 +580,7 @@ class SchedulerService {
       }
 
       task.anomalyIgnored = Boolean(ignored);
-      task.updatedAt = nowIso();
+      task.updatedAt = this.#nowIso();
 
       this.#prepareState(state);
       tx.commit();
@@ -626,7 +638,7 @@ class SchedulerService {
       for (const task of state.tasks) {
         if (task.categoryId === categoryId) {
           task.categoryId = CATEGORY.GENERAL_ID;
-          task.updatedAt = nowIso();
+          task.updatedAt = this.#nowIso();
           reassignedTaskCount += 1;
         }
       }
@@ -707,6 +719,16 @@ class SchedulerService {
         throw new AppError(400, "INVALID_IMPORT_DATA", `任务 id 重复: ${task.id}`);
       }
       taskIds.add(task.id);
+      if (task.accumulatedMs !== undefined && (!Number.isFinite(task.accumulatedMs) || task.accumulatedMs < 0)) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "累计用时必须为非负数");
+      }
+      if (task.timerStartedAt != null && (
+        typeof task.timerStartedAt !== "string" ||
+        !Number.isFinite(new Date(task.timerStartedAt).getTime()) ||
+        task.status !== TASK_STATUS.IN_PROGRESS
+      )) {
+        throw new AppError(400, "INVALID_IMPORT_DATA", "计时起点或任务计时状态无效");
+      }
     }
 
     const categoryIds = new Set();
@@ -742,7 +764,7 @@ class SchedulerService {
     }
   }
 
-  #completeRemainingCheckpoints(task, checkpoints, actualMinutes) {
+  #completeRemainingCheckpoints(task, checkpoints) {
     const related = checkpoints.filter((cp) => cp.taskId === task.id);
     if (!related.length) {
       return;
@@ -753,17 +775,6 @@ class SchedulerService {
       checkpoint.completed = true;
       checkpoint.skipped = false;
     }
-
-    if (actualMinutes === undefined) {
-      return;
-    }
-
-    const totalActual = toInt(actualMinutes, 0);
-    const target = completionTargets[completionTargets.length - 1] || related[related.length - 1];
-    const otherActual = related
-      .filter((cp) => cp.id !== target.id)
-      .reduce((sum, cp) => sum + toInt(cp.actualMinutes, 0), 0);
-    target.actualMinutes = Math.max(0, totalActual - otherActual);
   }
 
   #prepareState(state) {
@@ -865,7 +876,7 @@ class SchedulerService {
         changed = true;
       }
       if (!task.createdAt) {
-        task.createdAt = nowIso();
+        task.createdAt = this.#nowIso();
         changed = true;
       }
       if (!task.updatedAt) {
@@ -890,6 +901,28 @@ class SchedulerService {
       }
       if (task.directMinutes == null) {
         task.directMinutes = toInt(task.actualMinutes, 0);
+        changed = true;
+      }
+      // 旧数据保留已记录的任务总用时。检查点只作为缺失总用时的迁移兜底。
+      if (!Number.isFinite(task.accumulatedMs) || task.accumulatedMs < 0) {
+        const legacyActual = Number(task.actualMinutes ?? NaN);
+        const checkpointMinutes = state.checkpoints
+          .filter((cp) => cp.taskId === task.id)
+          .reduce((sum, cp) => sum + toInt(cp.actualMinutes, 0), 0);
+        const minutes = Number.isFinite(legacyActual) && legacyActual >= 0
+          ? legacyActual
+          : Math.max(toInt(task.directMinutes, 0), checkpointMinutes);
+        task.accumulatedMs = Math.round(minutes * 60_000);
+        changed = true;
+      }
+      if (task.status === TASK_STATUS.IN_PROGRESS) {
+        if (!task.timerStartedAt || !Number.isFinite(new Date(task.timerStartedAt).getTime())) {
+          // 历史进行中任务缺少起点，不用 updatedAt 猜测未记录时长。
+          task.timerStartedAt = this.#nowIso();
+          changed = true;
+        }
+      } else if (task.timerStartedAt !== null) {
+        task.timerStartedAt = null;
         changed = true;
       }
       if (!task.categoryId) {
@@ -1030,7 +1063,7 @@ class SchedulerService {
       const flagChanged = this.#setAnomalyFlag(task, ANOMALY_FLAGS.OVERDUE, isOverdue);
 
       if (flagChanged) {
-        task.updatedAt = nowIso();
+        task.updatedAt = this.#nowIso();
         changed = true;
       }
     }
@@ -1049,20 +1082,15 @@ class SchedulerService {
       changed = true;
     }
 
-    const cpMinutes = related.reduce((sum, cp) => sum + toInt(cp.actualMinutes, 0), 0);
-    const nextActual = related.length > 0 ? cpMinutes : toInt(task.directMinutes, 0);
-    if (task.actualMinutes !== nextActual) {
-      task.actualMinutes = nextActual;
-      changed = true;
-    }
-
     if (related.length > 0) {
       const activeCheckpoints = related.filter((cp) => !cp.skipped);
       const checkpointEstimated = activeCheckpoints.reduce((sum, cp) => sum + toInt(cp.estimatedMinutes, 0), 0);
       const completedEstimated = activeCheckpoints
         .filter((cp) => cp.completed)
         .reduce((sum, cp) => sum + toInt(cp.estimatedMinutes, 0), 0);
-      const nextEstimated = related.reduce((sum, cp) => sum + toInt(cp.estimatedMinutes, 0), 0);
+      const nextEstimated = related.every((cp) => isPositiveFinite(cp.estimatedMinutes))
+        ? related.reduce((sum, cp) => sum + cp.estimatedMinutes, 0)
+        : task.directEstimatedMinutes;
       if (task.estimatedMinutes !== nextEstimated) {
         task.estimatedMinutes = nextEstimated;
         changed = true;
@@ -1071,7 +1099,7 @@ class SchedulerService {
       const nextProgress =
         activeCheckpoints.length === 0
           ? 100
-          : checkpointEstimated > 0
+          : activeCheckpoints.every((cp) => isPositiveFinite(cp.estimatedMinutes)) && checkpointEstimated > 0
           ? clampProgress((completedEstimated / checkpointEstimated) * 100)
           : clampProgress((activeCheckpoints.filter((cp) => cp.completed).length / activeCheckpoints.length) * 100);
       if (task.progress !== nextProgress) {
@@ -1081,12 +1109,13 @@ class SchedulerService {
 
       const allCheckpointsResolved = related.every((cp) => cp.completed || cp.skipped);
       if (allCheckpointsResolved && isIncompleteStatus(task.status)) {
+        this.#settleTimer(task);
         task.status = TASK_STATUS.DONE;
         task.progress = 100;
         task.anomalyFlags = [];
         task.anomalyIgnored = false;
-        task.finishedAt = nowIso();
-        task.updatedAt = nowIso();
+        task.finishedAt = this.#nowIso();
+        task.updatedAt = this.#nowIso();
         changed = true;
       }
     } else {
@@ -1101,6 +1130,13 @@ class SchedulerService {
         task.progress = nextProgress;
         changed = true;
       }
+    }
+
+    const nextActual = task.accumulatedMs / 60_000;
+    if (task.actualMinutes !== nextActual || task.directMinutes !== nextActual) {
+      task.actualMinutes = nextActual;
+      task.directMinutes = nextActual;
+      changed = true;
     }
 
     if (task.status === TASK_STATUS.DONE && task.progress !== 100) {
@@ -1151,7 +1187,7 @@ class SchedulerService {
     const historyMap = {};
 
     for (const task of tasks) {
-      const actual = toInt(task.actualMinutes, 0);
+      const actual = task.actualMinutes;
       const estimated = toInt(task.estimatedMinutes, 0);
       const updatedAt = new Date(task.updatedAt).getTime();
 
@@ -1298,7 +1334,7 @@ class SchedulerService {
     const historyMap = {};
 
     for (const task of tasks) {
-      const actual = toInt(task.actualMinutes, 0);
+      const actual = task.actualMinutes;
       const estimated = toInt(task.estimatedMinutes, 0);
 
       // 完成率分母/分子：创建于范围内
