@@ -7,6 +7,9 @@
     "auth:init": "node scripts/initAuth.js",
     "test:logic": "node scripts/logicTests.js",
     "test:timing": "node scripts/timingTests.js",
+    "test:schedule": "node scripts/scheduleTests.js",
+    "test:agent": "node scripts/agentTests.js",
+    "agent:openapi": "node scripts/writeAgentOpenApi.js",
     "start": "WORK_SCHEDULE_CORS_ORIGINS=http://localhost:5173 node server.js"
   },
   "keywords": [

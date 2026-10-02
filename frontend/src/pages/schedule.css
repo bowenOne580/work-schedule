@@ -1,0 +1,63 @@
+.schedule-page {
+  --schedule-surface: oklch(99% 0.003 255);
+  --schedule-line: oklch(91% 0.008 255);
+  --schedule-busy-bg: oklch(93% 0.035 265);
+  --schedule-busy-ink: oklch(39% 0.12 265);
+  --schedule-free-bg: oklch(94% 0.04 165);
+  --schedule-free-ink: oklch(35% 0.075 165);
+}
+.schedule-page button, .schedule-page input, .schedule-page select { transition: background-color 150ms ease-out, outline-color 150ms ease-out; }
+.schedule-page :focus-visible { outline: 2px solid oklch(55% 0.18 275); outline-offset: 3px; }
+.schedule-page button:disabled, .schedule-page fieldset:disabled { opacity: .6; }
+.schedule-page button:disabled { cursor: not-allowed; }
+.schedule-primary, .schedule-secondary, .schedule-delete { padding: .5rem .8rem; border-radius: .5rem; font-size: .8rem; font-weight: 500; }
+.schedule-primary { background: oklch(55% 0.2 278); color: oklch(98% 0.005 278); }
+.schedule-primary:hover:not(:disabled) { background: oklch(49% 0.2 278); }
+.schedule-secondary { background: oklch(94% 0.008 255); color: oklch(42% 0.025 255); }
+.schedule-secondary:hover { background: oklch(90% 0.01 255); }
+.schedule-delete { background: oklch(94% 0.025 25); color: oklch(45% 0.16 25); }
+.schedule-dialog { width: min(28rem, calc(100% - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; margin: auto; background: var(--schedule-surface); border: 1px solid var(--schedule-line); border-radius: .75rem; padding: 1.5rem; box-shadow: 0 12px 40px oklch(25% 0.02 255 / .18); }
+.schedule-dialog::backdrop { background: oklch(20% 0.02 255 / .3); }
+.schedule-icon-button { padding: .35rem; color: oklch(55% 0.02 255); border-radius: .35rem; }
+.schedule-icon-button:hover { background: oklch(95% 0.008 255); }
+.schedule-label { display: block; font-size: .75rem; font-weight: 500; color: oklch(42% 0.025 255); margin-bottom: .45rem; }
+.schedule-input { width: 100%; padding: .5rem .6rem; border: 1px solid var(--schedule-line); border-radius: .4rem; background: var(--schedule-surface); color: oklch(30% 0.025 255); font-size: .8rem; }
+.schedule-input:focus { border-color: oklch(65% 0.15 278); }
+.schedule-type-choice { display: flex; gap: .4rem; align-items: center; padding: .5rem .6rem; border: 1px solid var(--schedule-line); border-radius: .4rem; font-size: .75rem; flex: 1; cursor: pointer; white-space: nowrap; }
+.schedule-type-choice input, .schedule-day-choice input { accent-color: oklch(55% 0.2 278); }
+.schedule-day-choice { display: flex; align-items: center; justify-content: center; gap: .2rem; border: 1px solid var(--schedule-line); border-radius: .4rem; padding: .45rem .15rem; font-size: .7rem; cursor: pointer; }
+.schedule-day-choice.selected { background: oklch(95% 0.025 278); color: oklch(43% 0.15 278); }
+.schedule-error { border: 1px solid oklch(86% 0.06 25); background: oklch(97% 0.01 25); color: oklch(44% 0.14 25); padding: .75rem; border-radius: .5rem; font-size: .8rem; }
+.schedule-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .75rem; }
+.schedule-swatch { display: inline-block; width: .65rem; height: .65rem; border: 1px solid currentColor; border-radius: .15rem; }
+.schedule-busy { background: var(--schedule-busy-bg); color: var(--schedule-busy-ink); }
+.schedule-free { background: var(--schedule-free-bg); color: var(--schedule-free-ink); }
+.schedule-view-button { font-size: .75rem; padding: .35rem .65rem; border-radius: .4rem; color: oklch(50% 0.025 255); }
+.schedule-view-button:hover { background: oklch(93% 0.01 255); }
+.schedule-view-button.active { background: oklch(93% 0.03 278); color: oklch(43% 0.15 278); font-weight: 500; }
+.schedule-board-scroll { max-height: 690px; overflow: auto; border: 1px solid var(--schedule-line); border-radius: .6rem; background: var(--schedule-surface); }
+.schedule-board { min-width: 760px; padding-bottom: 12px; }
+.schedule-board.single-day { min-width: 0; }
+.schedule-board-header { display: grid; position: sticky; top: 0; background: var(--schedule-surface); z-index: 2; border-bottom: 1px solid var(--schedule-line); }
+.schedule-board-header span { text-align: center; padding: .75rem 0; font-size: .75rem; font-weight: 500; }
+.schedule-time-axis { position: relative; }
+.schedule-time-axis span { position: absolute; right: 7px; transform: translateY(-50%); font-size: .6rem; color: oklch(55% 0.02 255); font-variant-numeric: tabular-nums; }
+.schedule-time-axis span:first-child { transform: none; }
+.schedule-day-column { position: relative; border-left: 1px solid var(--schedule-line); background-image: linear-gradient(to bottom, var(--schedule-line) 1px, transparent 1px), linear-gradient(to bottom, oklch(96% 0.006 255) 1px, transparent 1px); background-size: 100% 72px, 100% 36px; }
+.schedule-block { position: absolute; left: 4px; right: 4px; padding: 0 .35rem; border: 1px solid currentColor; border-radius: .3rem; overflow: hidden; text-align: left; font-size: .65rem; line-height: 1.4; }
+.schedule-block:hover { filter: brightness(.97); }
+.schedule-block.is-selected { outline: 2px solid oklch(55% 0.18 275); outline-offset: 1px; }
+.schedule-block:focus-visible { z-index: 1; }
+.schedule-type-tag { display: inline-block; border-radius: .3rem; padding: .2rem .45rem; font-size: .65rem; white-space: nowrap; }
+.schedule-list-row { width: 100%; display: flex; align-items: center; gap: .75rem; padding: .85rem .25rem; text-align: left; font-size: .8rem; border-radius: .3rem; }
+.schedule-list-row:hover { background: oklch(96% 0.008 255); }
+.schedule-loading { display: flex; align-items: center; justify-content: center; min-height: 420px; border: 1px solid var(--schedule-line); border-radius: .6rem; background: repeating-linear-gradient(to bottom, var(--schedule-surface) 0 71px, var(--schedule-line) 71px 72px); color: oklch(50% 0.025 255); font-size: .8rem; }
+@media (max-width: 600px) {
+  .schedule-page header { flex-wrap: wrap; }
+  .schedule-toolbar { align-items: flex-start; }
+  .schedule-toolbar > div:first-child { gap: .5rem; }
+  .schedule-list-row { gap: .5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .schedule-page button, .schedule-page input, .schedule-page select { transition: none; }
+}

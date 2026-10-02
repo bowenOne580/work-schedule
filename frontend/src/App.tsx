@@ -12,6 +12,7 @@ import SettingsPage from './pages/SettingsPage'
 import ArchivePage from './pages/ArchivePage'
 
 const StatsPage = lazy(() => import('./pages/StatsPage'))
+const SchedulePage = lazy(() => import('./pages/SchedulePage'))
 
 function PageLoader() {
   return (
@@ -52,6 +53,7 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="tasks/:taskId" element={<TasksPage />} />
+          <Route path="schedule" element={<Suspense fallback={<PageLoader />}><SchedulePage /></Suspense>} />
           <Route path="stats" element={<Suspense fallback={<PageLoader />}><StatsPage /></Suspense>} />
           <Route path="anomalies" element={<AnomaliesPage />} />
           <Route path="archive" element={<ArchivePage />} />

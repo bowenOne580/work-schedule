@@ -2,6 +2,10 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const DATA_FILES = {
+  scheduleSlots: {
+    file: "schedule_slots.json",
+    defaultValue: [],
+  },
   tasks: {
     file: "tasks.json",
     defaultValue: [],

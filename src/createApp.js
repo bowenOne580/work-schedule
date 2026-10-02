@@ -16,6 +16,8 @@ const {
   verifyPassword,
 } = require("./auth");
 const { writeUpdateState, createSnapshot, restoreSnapshot } = require("./updateGuard");
+const { createAgentRouter } = require("./agent/router");
+const { WeeklyScheduleService } = require("./services/weeklyScheduleService");
 
 function parseCookies(header) {
   if (!header) {
@@ -248,7 +250,8 @@ function createApp(service, options = {}) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Credentials", "true");
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, If-Match");
+      res.setHeader("Access-Control-Expose-Headers", "ETag, Idempotency-Replayed, Retry-After");
       res.setHeader("Vary", mergeVary(res.getHeader("Vary"), "Origin"));
     }
 
@@ -258,6 +261,9 @@ function createApp(service, options = {}) {
 
     return next();
   });
+
+  // Agent 路由独立校验 Bearer Token，不进入网页 Cookie 与系统管理接口。
+  app.use("/api/agent/v1", createAgentRouter(service, { authConfig, ...options.agentAuth }));
 
   app.use((req, _res, next) => {
     const cookies = parseCookies(req.headers.cookie || "");
@@ -326,6 +332,13 @@ function createApp(service, options = {}) {
     }
     return next();
   });
+
+  // 独立周课表，不读取任务状态，也不参与任务推荐或计时。
+  const weeklySchedule = new WeeklyScheduleService(service.storage);
+  app.get("/api/schedule/slots", asyncRoute(() => weeklySchedule.list()));
+  app.post("/api/schedule/slots", asyncRoute((req) => weeklySchedule.create(req.body)));
+  app.patch("/api/schedule/slots/:id", asyncRoute((req) => weeklySchedule.update(req.params.id, req.body)));
+  app.delete("/api/schedule/slots/:id", asyncRoute((req) => weeklySchedule.delete(req.params.id)));
 
   app.get(
     "/api/tasks",
@@ -793,7 +806,13 @@ function createApp(service, options = {}) {
     });
   }
 
-  app.use((error, _req, res, _next) => {
+  app.use((error, req, res, _next) => {
+    if (req.path.startsWith("/api/agent/v1") && error.type === "entity.parse.failed") {
+      error = new AppError(400, "INVALID_JSON", "请求体必须为有效的 JSON");
+    }
+    if (req.path.startsWith("/api/agent/v1") && error.type === "entity.too.large") {
+      error = new AppError(413, "PAYLOAD_TOO_LARGE", "请求体不能超过 1 MB");
+    }
     const status = error.status || 500;
     const code = error.code || "INTERNAL_ERROR";
     const message = error.message || "Internal server error";

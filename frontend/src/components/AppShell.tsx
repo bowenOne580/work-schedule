@@ -3,12 +3,13 @@ import { useState } from 'react'
 import { useMutation, setCache } from '../hooks/useApi'
 import { authApi } from '../api'
 import {
-  LayoutDashboard, CheckSquare, BarChart2, AlertTriangle, Settings, LogOut, Menu, X, Archive,
+  LayoutDashboard, CheckSquare, BarChart2, AlertTriangle, Settings, LogOut, Menu, X, Archive, CalendarDays,
 } from 'lucide-react'
 
 const navItems = [
   { to: '/app', label: '今日', icon: LayoutDashboard, end: true },
   { to: '/app/tasks', label: '任务', icon: CheckSquare, end: false },
+  { to: '/app/schedule', label: '日程', icon: CalendarDays, end: false },
   { to: '/app/stats', label: '统计', icon: BarChart2, end: false },
   { to: '/app/anomalies', label: '异常', icon: AlertTriangle, end: false },
   { to: '/app/archive', label: '归档', icon: Archive, end: false },
@@ -56,6 +57,7 @@ export default function AppShell() {
               key={to}
               to={to}
               end={end}
+              aria-label={label}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 ${collapsed ? 'w-[44px]' : 'w-full'} h-9 rounded-md text-sm transition-all duration-200 overflow-hidden whitespace-nowrap ${
                   isActive
@@ -94,6 +96,7 @@ export default function AppShell() {
               key={to}
               to={to}
               end={end}
+              aria-label={label}
               className={({ isActive }) =>
                 `flex-1 flex flex-col items-center gap-0.5 py-2 text-xs transition-colors ${
                   isActive ? 'text-indigo-600' : 'text-slate-500'
