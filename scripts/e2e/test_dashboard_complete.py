@@ -107,9 +107,31 @@ def verify(page, base):
     expect(page.get_by_role("timer")).to_have_text(paused_display)
     assert api(page, f"/api/tasks/{task_id}")["accumulatedMs"] == paused["accumulatedMs"]
 
-    click_action(page, "继续", task_id, "resume")
-    expect(page.get_by_text("计时中", exact=True)).to_be_visible()
+    # Paused tasks compete with todo tasks, with only one winner per category.
+    lower_todo = api(page, "/api/tasks", "POST", {"title": "test_lower_todo", "manualPriority": 4})
+    lower_paused = api(page, "/api/tasks", "POST", {"title": "test_lower_paused", "manualPriority": 5})
+    api(page, f"/api/tasks/{lower_paused['id']}/start", "POST")
+    api(page, f"/api/tasks/{lower_paused['id']}/pause", "POST")
     page.goto(base + "/app")
+    candidates = page.locator("section").filter(has=page.get_by_role("heading", name="各分类推荐", exact=True))
+    expect(candidates.get_by_text("test_automatic_time", exact=True)).to_be_visible()
+    expect(candidates.get_by_text("test_lower_todo", exact=True)).to_have_count(0)
+    expect(candidates.get_by_text("test_lower_paused", exact=True)).to_have_count(0)
+    expect(candidates.get_by_role("button", name="继续", exact=True)).to_have_count(1)
+    assert api(page, f"/api/tasks/{task_id}")["accumulatedMs"] == paused["accumulatedMs"]
+    click_action(page, "继续", task_id, "resume")
+    expect(page.get_by_role("timer")).to_contain_text("计时中")
+    resumed = api(page, f"/api/tasks/{task_id}")
+    assert resumed["status"] == "in_progress" and resumed["timerStartedAt"]
+    assert resumed["accumulatedMs"] == paused["accumulatedMs"]
+    expect(candidates.get_by_text("test_automatic_time", exact=True)).to_have_count(0)
+    expect(candidates.get_by_text(lower_todo["title"], exact=True)).to_be_visible()
+    expect(candidates.get_by_role("button", name="开始", exact=True)).to_have_count(1)
+    # Pausing on 今日 should restore the candidate without refreshing the page.
+    click_action(page, "暂停", task_id, "pause")
+    expect(candidates.get_by_text("test_automatic_time", exact=True)).to_be_visible()
+    expect(candidates.get_by_text("test_lower_paused", exact=True)).to_have_count(0)
+    click_action(page, "继续", task_id, "resume")
     expect(page.get_by_role("timer")).to_contain_text("计时中")
     page.wait_for_timeout(1100)
     click_action(page, "完成", task_id, "complete")
@@ -150,7 +172,7 @@ def verify(page, base):
     stats = api(page, "/api/statistics/overview?range=all")
     assert abs(stats["rangeMinutes"] - done["actualMinutes"] - parent_done["actualMinutes"]) < 1e-6
     assert not errors, errors
-    print("[PASS] optional estimates, timing, pause/resume, refresh, dashboard completion, checkpoints, archive and stats")
+    print("[PASS] optional estimates, timing, paused candidates per category, dashboard resume, refresh, completion, checkpoints, archive and stats")
 
 
 def main():

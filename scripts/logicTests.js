@@ -19,17 +19,46 @@ async function testRecommendationPriorityAndStatus() {
   const service = await createService();
   const high = await service.createTask({ title: "P1 high", manualPriority: 1, estimatedMinutes: 60 });
   const low = await service.createTask({ title: "P5 low", manualPriority: 5, estimatedMinutes: 60 });
+  const middle = await service.createTask({ title: "P3 paused", manualPriority: 3, estimatedMinutes: 60 });
   await service.runTaskAction(high.id, "start");
   await service.runTaskAction(high.id, "pause");
+  await service.runTaskAction(middle.id, "start");
+  await service.runTaskAction(middle.id, "pause");
+
+  const running = await service.createTask({ title: "P1 running", manualPriority: 1, deadline: "2020-01-01" });
+  await service.runTaskAction(running.id, "start");
+  const done = await service.createTask({ title: "P1 done", manualPriority: 1, deadline: "2020-01-01" });
+  await service.runTaskAction(done.id, "complete");
+
+  const mixedCategory = await service.createCategory({ name: "Mixed tasks" });
+  const todoWinner = await service.createTask({ title: "P1 todo", categoryId: mixedCategory.id, manualPriority: 1, estimatedMinutes: 60 });
+  const pausedLoser = await service.createTask({ title: "P5 paused", categoryId: mixedCategory.id, manualPriority: 5, estimatedMinutes: 60 });
+  await service.runTaskAction(pausedLoser.id, "start");
+  await service.runTaskAction(pausedLoser.id, "pause");
+
+  const pausedCategory = await service.createCategory({ name: "Only paused tasks" });
+  const pausedWinner = await service.createTask({ title: "P2 paused only", categoryId: pausedCategory.id, manualPriority: 2, estimatedMinutes: 60 });
+  const pausedOther = await service.createTask({ title: "P5 paused only", categoryId: pausedCategory.id, manualPriority: 5, estimatedMinutes: 60 });
+  for (const task of [pausedWinner, pausedOther]) {
+    await service.runTaskAction(task.id, "start");
+    await service.runTaskAction(task.id, "pause");
+  }
 
   let recs = await service.getRecommendationsByCategory();
-  assert.equal(recs[0].task.id, low.id, "paused tasks should not be recommended with a start button");
+  assert.equal(recs.length, 3, "each eligible category should have exactly one recommendation");
+  assert.equal(new Set(recs.map(rec => rec.category.id)).size, 3);
+  assert.equal(recs.find(rec => rec.category.id === high.categoryId).task.id, high.id, "highest-scoring paused task should outrank todo and other paused tasks");
+  assert.equal(recs.find(rec => rec.category.id === mixedCategory.id).task.id, todoWinner.id, "a higher-scoring todo task should outrank a paused task");
+  assert.equal(recs.find(rec => rec.category.id === pausedCategory.id).task.id, pausedWinner.id, "a category containing only paused tasks should still recommend only its highest-scoring task");
 
   await service.runTaskAction(high.id, "resume");
+  recs = await service.getRecommendationsByCategory();
+  assert.equal(recs.find(rec => rec.category.id === high.categoryId).task.id, middle.id, "resumed tasks should leave the candidates and the next best task should replace them");
   await service.runTaskAction(high.id, "complete");
   const replacement = await service.createTask({ title: "P1 replacement", manualPriority: 1, estimatedMinutes: 60 });
   recs = await service.getRecommendationsByCategory();
-  assert.equal(recs[0].task.id, replacement.id, "P1 should outrank P5 when both are todo");
+  assert.equal(recs.find(rec => rec.category.id === high.categoryId).task.id, replacement.id, "P1 todo should outrank lower-scoring paused and todo tasks");
+  assert.ok(!recs.some(rec => [low.id, running.id, done.id, high.id].includes(rec.task.id)), "non-winning, running and completed tasks must not be added separately");
 }
 
 async function testCompleteTaskWithCheckpoints() {

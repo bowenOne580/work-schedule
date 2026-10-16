@@ -83,7 +83,7 @@ function isIncompleteStatus(status) {
 }
 
 function isRecommendationStatus(status) {
-  return status === TASK_STATUS.TODO;
+  return status === TASK_STATUS.TODO || status === TASK_STATUS.PAUSED;
 }
 
 function isPositiveFinite(value) {

@@ -59,8 +59,8 @@ function InProgressCard({ task, onNavigate }: { task: Task; onNavigate: (id: str
 
 function RecommendCard({ rec, onNavigate }: { rec: Recommendation; onNavigate: (id: string) => void }) {
   const { task, category, score } = rec
-  const start = useMutation(
-    () => tasksApi.action(task.id, 'start'),
+  const activate = useMutation(
+    () => tasksApi.action(task.id, task.status === 'paused' ? 'resume' : 'start'),
     { onSuccess: invalidateWorkData }
   )
 
@@ -79,11 +79,11 @@ function RecommendCard({ rec, onNavigate }: { rec: Recommendation; onNavigate: (
         <span className="text-indigo-400 font-medium">{(score * 100).toFixed(0)}分</span>
       </div>
       <button
-        onClick={() => start.mutate(undefined)}
-        disabled={start.pending || task.status === 'in_progress'}
+        onClick={() => activate.mutate(undefined)}
+        disabled={activate.pending || task.status === 'in_progress'}
         className="flex items-center justify-center gap-1.5 w-full py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors disabled:opacity-50"
       >
-        <Play size={12} /> {task.status === 'in_progress' ? '进行中' : '开始'}
+        <Play size={12} /> {task.status === 'in_progress' ? '进行中' : task.status === 'paused' ? '继续' : '开始'}
       </button>
     </div>
   )
