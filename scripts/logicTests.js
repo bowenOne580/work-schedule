@@ -167,8 +167,9 @@ async function testResolveUpdateSourceDir() {
   await fs.rm(base, { recursive: true, force: true });
 }
 
-// 范围统计口径（doc/dev/2026-08-28/stats-range-filter-plan.md 第 4 节）：
-// 用时/完成/准时率/超时比按完成日入组；完成率按创建日入组。
+// 范围统计口径（doc/dev/2026-11-08/time-attribution-plan.md）：
+// 用时类按实际发生日归属；此用例的任务没有轮次记录，回退为完成日整块归账。
+// 完成数/准时率/超时比按完成日入组，完成率按创建日入组。
 // 通过直接写 tasks.json 回填历史日期（服务层无法构造过去的 createdAt/finishedAt）。
 async function testStatRanges() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "work-schedule-range-"));

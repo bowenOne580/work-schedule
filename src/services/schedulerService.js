@@ -105,15 +105,66 @@ class SchedulerService {
   }
 
   #rejectManualTime(payload) {
-    if (["actualMinutes", "directMinutes", "accumulatedMs", "timerStartedAt"].some((key) => key in payload)) {
+    if (["actualMinutes", "directMinutes", "accumulatedMs", "timerStartedAt", "timeSessions"].some((key) => key in payload)) {
       throw new AppError(400, "ACTUAL_TIME_READ_ONLY", "实际用时由任务计时自动记录，不能手动填写");
     }
   }
 
   #settleTimer(task) {
     if (!task.timerStartedAt) return;
-    task.accumulatedMs += Math.max(0, this.now() - new Date(task.timerStartedAt).getTime());
+    const startMs = new Date(task.timerStartedAt).getTime();
+    const endMs = this.now();
+    const ms = Number.isFinite(startMs) ? Math.max(0, endMs - startMs) : 0;
+    if (!Array.isArray(task.timeSessions)) {
+      task.timeSessions = [];
+    }
+    if (ms > 0) {
+      task.timeSessions.push({
+        startAt: new Date(startMs).toISOString(),
+        endAt: new Date(endMs).toISOString(),
+        ms,
+      });
+    }
+    task.accumulatedMs = (Number.isFinite(task.accumulatedMs) ? task.accumulatedMs : 0) + ms;
     task.timerStartedAt = null;
+  }
+
+  // 把任务已结算的计时轮次按服务器本地日期归属为 { dateKey: 毫秒 }。
+  // 跨午夜的一轮按天拆分；没有轮次的历史任务回退为单条，归到完成日（无则更新日），
+  // 与升级前的口径保持一致。进行中尚未结算的当前轮不参与统计。
+  #attributeSessions(task) {
+    const byDate = new Map();
+    const add = (dateKey, ms) => {
+      if (!Number.isFinite(ms) || ms <= 0) return;
+      byDate.set(dateKey, (byDate.get(dateKey) || 0) + ms);
+    };
+
+    const sessions = Array.isArray(task.timeSessions) ? task.timeSessions : [];
+    for (const session of sessions) {
+      const startMs = new Date(session.startAt).getTime();
+      const endMs = new Date(session.endAt).getTime();
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) continue;
+      let cursor = startMs;
+      while (cursor < endMs) {
+        const dayStart = startOfLocalDay(new Date(cursor));
+        const sliceEnd = Math.min(endMs, addDays(dayStart, 1).getTime());
+        add(localDateKey(new Date(cursor)), sliceEnd - cursor);
+        cursor = sliceEnd;
+      }
+    }
+
+    if (byDate.size === 0) {
+      const fallback = task.finishedAt || task.updatedAt;
+      const ms = Number(task.accumulatedMs);
+      if (fallback && Number.isFinite(ms) && ms > 0) {
+        const date = new Date(fallback);
+        if (Number.isFinite(date.getTime())) {
+          add(localDateKey(date), ms);
+        }
+      }
+    }
+
+    return byDate;
   }
 
   async getTasks() {
@@ -729,6 +780,24 @@ class SchedulerService {
       )) {
         throw new AppError(400, "INVALID_IMPORT_DATA", "计时起点或任务计时状态无效");
       }
+      if (task.timeSessions !== undefined) {
+        if (!Array.isArray(task.timeSessions)) {
+          throw new AppError(400, "INVALID_IMPORT_DATA", "计时轮次必须为数组");
+        }
+        for (const session of task.timeSessions) {
+          if (!session || typeof session !== "object") {
+            throw new AppError(400, "INVALID_IMPORT_DATA", "计时轮次格式无效");
+          }
+          const startMs = new Date(session.startAt).getTime();
+          const endMs = new Date(session.endAt).getTime();
+          if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+            throw new AppError(400, "INVALID_IMPORT_DATA", "计时轮次起止时间无效");
+          }
+          if (session.ms !== undefined && (!Number.isFinite(session.ms) || session.ms < 0)) {
+            throw new AppError(400, "INVALID_IMPORT_DATA", "计时轮次时长必须为非负数");
+          }
+        }
+      }
     }
 
     const categoryIds = new Set();
@@ -913,6 +982,10 @@ class SchedulerService {
           ? legacyActual
           : Math.max(toInt(task.directMinutes, 0), checkpointMinutes);
         task.accumulatedMs = Math.round(minutes * 60_000);
+        changed = true;
+      }
+      if (!Array.isArray(task.timeSessions)) {
+        task.timeSessions = [];
         changed = true;
       }
       if (task.status === TASK_STATUS.IN_PROGRESS) {
@@ -1163,7 +1236,7 @@ class SchedulerService {
   }
 
   #computeStatistics(tasks, categories, prevCache) {
-    const now = new Date();
+    const now = new Date(this.now());
     const todayStart = startOfLocalDay(now);
     const tomorrowStart = addDays(todayStart, 1);
     const weekStart = startOfLocalWeek(now);
@@ -1187,34 +1260,43 @@ class SchedulerService {
     const historyMap = {};
 
     for (const task of tasks) {
-      const actual = task.actualMinutes;
       const estimated = toInt(task.estimatedMinutes, 0);
       const updatedAt = new Date(task.updatedAt).getTime();
+      const actualMinutes = Number(task.actualMinutes) || 0;
+      const attributed = this.#attributeSessions(task);
+
+      let taskMinutes = 0;
+      for (const [dateKey, ms] of attributed) {
+        const minutes = ms / 60_000;
+        taskMinutes += minutes;
+        historyMap[dateKey] = (historyMap[dateKey] || 0) + minutes;
+        const dayMs = new Date(`${dateKey}T00:00:00`).getTime();
+        if (!Number.isFinite(dayMs)) continue;
+        if (dayMs >= todayStart.getTime() && dayMs < tomorrowStart.getTime()) {
+          dailyMinutes += minutes;
+        }
+        if (dayMs >= weekStart.getTime() && dayMs < nextWeekStart.getTime()) {
+          weeklyMinutes += minutes;
+        }
+      }
+
+      totalActualMinutes += taskMinutes;
+      totalEstimatedMinutes += estimated;
+      categoryActualMinutes[task.categoryId] = (categoryActualMinutes[task.categoryId] || 0) + taskMinutes;
+      categoryEstimatedMinutes[task.categoryId] = (categoryEstimatedMinutes[task.categoryId] || 0) + estimated;
 
       if (task.status === TASK_STATUS.DONE) {
         const finishedAt = task.finishedAt ? new Date(task.finishedAt) : new Date(updatedAt);
         const finishedMs = finishedAt.getTime();
         if (Number.isFinite(finishedMs)) {
-          const key = localDateKey(finishedAt);
-          historyMap[key] = (historyMap[key] || 0) + actual;
-
           if (finishedAt >= todayStart && finishedAt < tomorrowStart) {
-            dailyMinutes += actual;
             dailyDoneCount += 1;
           }
           if (finishedAt >= weekStart && finishedAt < nextWeekStart) {
-            weeklyMinutes += actual;
             weeklyDoneCount += 1;
           }
         }
-      }
 
-      totalActualMinutes += actual;
-      totalEstimatedMinutes += estimated;
-      categoryActualMinutes[task.categoryId] = (categoryActualMinutes[task.categoryId] || 0) + actual;
-      categoryEstimatedMinutes[task.categoryId] = (categoryEstimatedMinutes[task.categoryId] || 0) + estimated;
-
-      if (task.status === TASK_STATUS.DONE) {
         doneCount += 1;
         const key = String(this.#normalizePriority(task.manualPriority));
         doneByPriority[key] = (doneByPriority[key] || 0) + 1;
@@ -1222,13 +1304,13 @@ class SchedulerService {
         // on-time: completed before or on deadline
         if (task.deadline) {
           const deadlineTs = new Date(task.deadline + 'T23:59:59').getTime();
-          const finishedAt = task.finishedAt ? new Date(task.finishedAt).getTime() : updatedAt;
-          if (finishedAt <= deadlineTs) onTimeCount += 1;
+          const finishedAtMs = task.finishedAt ? new Date(task.finishedAt).getTime() : updatedAt;
+          if (finishedAtMs <= deadlineTs) onTimeCount += 1;
         }
 
         // overdue ratio: (actual - estimated) / estimated, only when estimated > 0
-        if (estimated > 0 && actual > 0) {
-          overdueRatioSum += (actual - estimated) / estimated;
+        if (estimated > 0 && actualMinutes > 0) {
+          overdueRatioSum += (actualMinutes - estimated) / estimated;
           overdueRatioCount += 1;
         }
       }
@@ -1278,7 +1360,7 @@ class SchedulerService {
   // 统计范围窗口解析：返回 [start, endExclusive) 半开区间；start=null 表示不限（全部）。
   // 自定义范围的结束日期若为未来，自动调整为今天（与前端 clamp 行为一致）。
   #resolveStatRangeWindow(range) {
-    const todayStart = startOfLocalDay(new Date());
+    const todayStart = startOfLocalDay(new Date(this.now()));
     const tomorrowStart = addDays(todayStart, 1);
 
     if (range.type === "week") {
@@ -1309,12 +1391,13 @@ class SchedulerService {
     return { type: range.type, start, endInclusive, endExclusive: addDays(endInclusive, 1) };
   }
 
-  // 范围口径（见 doc/dev/2026-08-28/stats-range-filter-plan.md 第 4 节）：
-  // 用时/完成/准时率/超时比/分类对比/优先级分布/趋势 按"完成日"入组（创建时间不限）；
-  // 完成率按"创建日"入组（创建于范围内的任务）。默认快照口径（#computeStatistics）不受影响。
+  // 范围口径（见 doc/dev/2026-11-08/time-attribution-plan.md）：
+  // 用时/趋势/分类对比按"实际发生日"归属（timeSessions，跨午夜按本地日拆分），
+  // 未完成任务的已结算用时同样计入；完成数/准时率/超时比按"完成日"入组（创建时间不限）；
+  // 完成率按"创建日"入组（创建于范围内的任务）。默认快照口径（#computeStatistics）同此归属规则。
   #computeRangedStatistics(tasks, categories, range) {
     const window = this.#resolveStatRangeWindow(range);
-    const todayStart = startOfLocalDay(new Date());
+    const todayStart = startOfLocalDay(new Date(this.now()));
     const tomorrowStart = addDays(todayStart, 1);
 
     let todayMinutes = 0;
@@ -1328,14 +1411,16 @@ class SchedulerService {
     let overdueRatioCount = 0;
     let totalCategoryActual = 0;
     let earliestFinish = null;
+    let earliestSession = null;
     const categoryActual = {};
     const categoryEstimated = {};
     const doneByPriority = {};
     const historyMap = {};
 
     for (const task of tasks) {
-      const actual = task.actualMinutes;
       const estimated = toInt(task.estimatedMinutes, 0);
+      const actualMinutes = Number(task.actualMinutes) || 0;
+      const attributed = this.#attributeSessions(task);
 
       // 完成率分母/分子：创建于范围内
       const createdAt = new Date(task.createdAt);
@@ -1350,21 +1435,37 @@ class SchedulerService {
         }
       }
 
+      // 用时类指标：按实际发生日归属，未完成任务的已结算用时同样计入
+      let taskTodayMinutes = 0;
+      let taskRangeMinutes = 0;
+      for (const [dayKey, ms] of attributed) {
+        const dayMs = new Date(`${dayKey}T00:00:00`).getTime();
+        if (!Number.isFinite(dayMs)) continue;
+        if (earliestSession == null || dayMs < earliestSession) earliestSession = dayMs;
+        const minutes = ms / 60_000;
+        if (dayMs >= todayStart.getTime() && dayMs < tomorrowStart.getTime()) taskTodayMinutes += minutes;
+        if (window.start && (dayMs < window.start.getTime() || dayMs >= window.endExclusive.getTime())) continue;
+        taskRangeMinutes += minutes;
+        historyMap[dayKey] = (historyMap[dayKey] || 0) + minutes;
+      }
+
+      todayMinutes += taskTodayMinutes;
+      rangeMinutes += taskRangeMinutes;
+      if (taskRangeMinutes > 0) {
+        categoryActual[task.categoryId] = (categoryActual[task.categoryId] || 0) + taskRangeMinutes;
+        categoryEstimated[task.categoryId] = (categoryEstimated[task.categoryId] || 0) + estimated;
+        totalCategoryActual += taskRangeMinutes;
+      }
+
+      // 完成类指标：仍按完成日入组
       if (task.status !== TASK_STATUS.DONE) continue;
       const finishedAt = task.finishedAt ? new Date(task.finishedAt) : new Date(task.updatedAt);
       const finishedMs = finishedAt.getTime();
       if (!Number.isFinite(finishedMs)) continue;
       if (!earliestFinish || finishedAt < earliestFinish) earliestFinish = finishedAt;
-      if (finishedAt >= todayStart && finishedAt < tomorrowStart) todayMinutes += actual;
       if (window.start && (finishedAt < window.start || finishedAt >= window.endExclusive)) continue;
 
       rangeDoneCount += 1;
-      rangeMinutes += actual;
-      const dayKey = localDateKey(finishedAt);
-      historyMap[dayKey] = (historyMap[dayKey] || 0) + actual;
-      categoryActual[task.categoryId] = (categoryActual[task.categoryId] || 0) + actual;
-      categoryEstimated[task.categoryId] = (categoryEstimated[task.categoryId] || 0) + estimated;
-      totalCategoryActual += actual;
       const priorityKey = String(this.#normalizePriority(task.manualPriority));
       doneByPriority[priorityKey] = (doneByPriority[priorityKey] || 0) + 1;
       if (task.deadline) {
@@ -1372,14 +1473,17 @@ class SchedulerService {
         if (finishedMs <= deadlineTs) onTimeCount += 1;
         onTimeWithDeadline += 1;
       }
-      if (estimated > 0 && actual > 0) {
-        overdueRatioSum += (actual - estimated) / estimated;
+      if (estimated > 0 && actualMinutes > 0) {
+        overdueRatioSum += (actualMinutes - estimated) / estimated;
         overdueRatioCount += 1;
       }
     }
 
-    // 趋势覆盖 [trendStart, trendEnd)：全部时从最早完成任务日起；自定义过去区间止于其结束日
-    const trendStart = window.start ?? (earliestFinish ? startOfLocalDay(earliestFinish) : todayStart);
+    // 趋势覆盖 [trendStart, trendEnd)：全部时从最早用时（完成日或计时轮次）起；自定义过去区间止于其结束日
+    const earliestCandidates = [];
+    if (earliestFinish) earliestCandidates.push(earliestFinish.getTime());
+    if (earliestSession != null) earliestCandidates.push(earliestSession);
+    const trendStart = window.start ?? (earliestCandidates.length ? startOfLocalDay(new Date(Math.min(...earliestCandidates))) : todayStart);
     const trendEnd = window.endExclusive > tomorrowStart ? tomorrowStart : window.endExclusive;
     const dailyHistory = [];
     for (let day = trendStart; day < trendEnd; day = addDays(day, 1)) {

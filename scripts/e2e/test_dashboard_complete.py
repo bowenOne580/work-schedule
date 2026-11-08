@@ -170,7 +170,11 @@ def verify(page, base):
     page.goto(base + "/app/stats")
     expect(page.get_by_role("heading", name="统计分析", exact=True)).to_be_visible()
     stats = api(page, "/api/statistics/overview?range=all")
-    assert abs(stats["rangeMinutes"] - done["actualMinutes"] - parent_done["actualMinutes"]) < 1e-6
+    # 用时按实际发生日归属后，未完成任务的已结算用时同样计入范围合计。
+    all_tasks = api(page, "/api/tasks")
+    expected_range = sum(item["actualMinutes"] for item in all_tasks)
+    assert abs(stats["rangeMinutes"] - expected_range) < 1e-6
+    assert stats["rangeMinutes"] >= done["actualMinutes"] + parent_done["actualMinutes"]
     assert not errors, errors
     print("[PASS] optional estimates, timing, paused candidates per category, dashboard resume, refresh, completion, checkpoints, archive and stats")
 

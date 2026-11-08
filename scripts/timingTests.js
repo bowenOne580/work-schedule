@@ -237,6 +237,102 @@ async function testAuthenticatedApi() {
   });
 }
 
+function localMs(month, day, hour, minute = 0) {
+  return new Date(2026, month - 1, day, hour, minute, 0, 0).getTime();
+}
+
+// 用时按实际发生日归属：跨天两轮、跨午夜单轮、暂停未完成、历史无轮次兜底。
+async function testCrossDayAttribution() {
+  await withFixture(async ({ service, storage, options, advance, now }) => {
+    advance(localMs(11, 7, 22) - now());
+    const task = await service.createTask({ title: "跨天两轮", estimatedMinutes: 120 });
+    await service.runTaskAction(task.id, "start");
+    advance(60 * 60_000);
+    await service.runTaskAction(task.id, "pause");
+    advance(2 * 60 * 60_000);
+    await service.runTaskAction(task.id, "resume");
+    advance(30 * 60_000);
+    const done = await service.runTaskAction(task.id, "complete");
+
+    assert.equal(done.timeSessions.length, 2, "两轮应各记录一条");
+    assert.equal(done.timeSessions.reduce((sum, item) => sum + item.ms, 0), done.accumulatedMs);
+    assert.equal(done.accumulatedMs, 90 * 60_000);
+
+    const snap = await service.getStatisticsOverview();
+    assert.equal(snap.dateKey, "2026-11-08");
+    assert.equal(snap.dailyMinutes, 30, "今日只计今天的 30 分钟");
+    const snapshotMap = Object.fromEntries(snap.dailyHistory.map((item) => [item.dateKey, item.minutes]));
+    assert.equal(snapshotMap["2026-11-07"], 60, "昨天的 60 分钟留在昨天");
+    assert.equal(snapshotMap["2026-11-08"], 30);
+
+    const week = await service.getStatisticsOverview({ type: "week", from: null, to: null });
+    assert.equal(week.rangeMinutes, 90);
+    const weekMap = Object.fromEntries(week.dailyHistory.map((item) => [item.dateKey, item.minutes]));
+    assert.equal(weekMap["2026-11-07"], 60);
+    assert.equal(weekMap["2026-11-08"], 30);
+
+    const all = await service.getStatisticsOverview({ type: "all", from: null, to: null });
+    assert.equal(all.rangeMinutes, 90);
+    assert.equal(all.dailyHistory[0].dateKey, "2026-11-07", "全部趋势从最早用时日起");
+
+    const reloaded = new SchedulerService(storage, options);
+    assert.equal((await reloaded.getStatisticsOverview()).dailyMinutes, 30, "重载后归属不变");
+    assert.equal((await reloaded.getTaskById(task.id)).timeSessions.length, 2);
+  });
+
+  await withFixture(async ({ service, advance, now }) => {
+    advance(localMs(11, 7, 23, 30) - now());
+    const task = await service.createTask({ title: "跨午夜" });
+    await service.runTaskAction(task.id, "start");
+    advance(60 * 60_000);
+    const paused = await service.runTaskAction(task.id, "pause");
+    assert.equal(paused.timeSessions.length, 1);
+
+    const snap = await service.getStatisticsOverview();
+    assert.equal(snap.dateKey, "2026-11-08");
+    assert.equal(snap.dailyMinutes, 30, "跨午夜后今日只有后半段");
+    const map = Object.fromEntries(snap.dailyHistory.map((item) => [item.dateKey, item.minutes]));
+    assert.equal(map["2026-11-07"], 30);
+    assert.equal(map["2026-11-08"], 30);
+  });
+
+  await withFixture(async ({ service, advance, now }) => {
+    advance(localMs(11, 8, 9) - now());
+    const task = await service.createTask({ title: "暂停未完成" });
+    await service.runTaskAction(task.id, "start");
+    advance(60 * 60_000);
+    const paused = await service.runTaskAction(task.id, "pause");
+    assert.equal(paused.status, "paused");
+
+    const snap = await service.getStatisticsOverview();
+    assert.equal(snap.dailyMinutes, 60, "未完成任务的已结算用时也计入今日");
+    assert.equal(snap.dailyDoneCount, 0);
+    assert.equal(snap.categoryTimeShare["cat-general"].actual, 60);
+    assert.equal(snap.categoryTimeShare["cat-general"].share, 1);
+  });
+
+  await withFixture(async ({ service, storage, advance, now }) => {
+    advance(localMs(11, 8, 9) - now());
+    const task = await service.createTask({ title: "历史任务", estimatedMinutes: 60 });
+    await storage.runExclusive((state, tx) => {
+      const target = state.tasks.find((item) => item.id === task.id);
+      delete target.timeSessions;
+      target.status = "done";
+      target.progress = 100;
+      target.accumulatedMs = 90 * 60_000;
+      target.actualMinutes = 90;
+      target.finishedAt = new Date(localMs(11, 8, 1)).toISOString();
+      tx.commit();
+    });
+
+    const snap = await service.getStatisticsOverview();
+    assert.equal(snap.dailyMinutes, 90, "无轮次的历史任务仍按完成日整块归账");
+    const map = Object.fromEntries(snap.dailyHistory.map((item) => [item.dateKey, item.minutes]));
+    assert.equal(map["2026-11-08"], 90);
+    assert.equal(map["2026-11-07"] ?? 0, 0);
+  });
+}
+
 async function main() {
   await testMultipleRoundsAndReload();
   await testPausedCompleteAndPostpone();
@@ -244,7 +340,8 @@ async function main() {
   await testConcurrentTransitions();
   await testLegacyDataAndImport();
   await testAuthenticatedApi();
-  console.log("Automatic timing tests passed (6 scenarios, including authenticated API)");
+  await testCrossDayAttribution();
+  console.log("Automatic timing tests passed (7 scenarios, including cross-day attribution and authenticated API)");
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });
